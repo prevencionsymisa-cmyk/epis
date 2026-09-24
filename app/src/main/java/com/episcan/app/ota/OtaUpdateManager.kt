@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -54,7 +55,12 @@ class OtaUpdateManager(
     /** Devuelve la actualización disponible o null si ya se está en la última versión. */
     suspend fun comprobar(urlManifiesto: String): UpdateInfo? = withContext(Dispatchers.IO) {
         require(urlManifiesto.startsWith("https://")) { "La URL de actualizaciones debe usar https" }
-        val peticion = Request.Builder().url(urlManifiesto).header("Cache-Control", "no-cache").build()
+        // GitHub (raw.githubusercontent.com) cachea cada URL unos 5 minutos: un parámetro distinto en
+        // cada comprobación evita que llegue un version.json antiguo justo después de publicar.
+        val url = urlManifiesto.toHttpUrl().newBuilder()
+            .addQueryParameter("t", System.currentTimeMillis().toString())
+            .build()
+        val peticion = Request.Builder().url(url).header("Cache-Control", "no-cache").build()
         cliente.newCall(peticion).execute().use { r ->
             if (!r.isSuccessful) throw IOException("El servidor respondió ${r.code}")
             val info = gson.fromJson(r.body?.string().orEmpty(), UpdateInfo::class.java)

@@ -1,8 +1,8 @@
 {
-  "latestVersionCode": 5,
-  "latestVersionName": "1.0.4",
-  "apkUrl": "https://raw.githubusercontent.com/prevencionsymisa-cmyk/epis/main/releases/epi-scan-v1.0.4.apk",
-  "releaseNotes": "Lista más compacta: sin miniatura, filas más bajas y nombre del EPI completo.",
+  "latestVersionCode": 6,
+  "latestVersionName": "1.0.5",
+  "apkUrl": "https://raw.githubusercontent.com/prevencionsymisa-cmyk/epis/main/releases/epi-scan-v1.0.5.apk",
+  "releaseNotes": "Las actualizaciones futuras se detectan al momento, sin esperar a la caché de GitHub.",
   "mandatory": false,
-  "sha256": "7672ca986a41d70ff499af100ba5fc105fafab022d62e0ffd3c6bd64aa14e33d"
+  "sha256": "a6ae62acaebe6cd2bb76435a583ad788a8db78b065d9be1b35a59a97436b7bee"
 }
