@@ -1,0 +1,8 @@
+{
+  "latestVersionCode": 3,
+  "latestVersionName": "1.0.2",
+  "apkUrl": "https://raw.githubusercontent.com/prevencionsymisa-cmyk/epis/main/releases/epi-scan-v1.0.2.apk",
+  "releaseNotes": "Catálogo más compacto: filas resumidas, filtro por zona del cuerpo y ficha completa al tocar un EPI.",
+  "mandatory": false,
+  "sha256": "db58a63d2b72c82633bc0cdad15eec3890687b90e2f5dfb894167fa920cbbe29"
+}
