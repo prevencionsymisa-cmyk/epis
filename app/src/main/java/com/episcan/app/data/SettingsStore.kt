@@ -9,16 +9,29 @@ class SettingsStore(context: Context) {
     private val prefs = context.getSharedPreferences("episcan_prefs", Context.MODE_PRIVATE)
 
     var geminiApiKey: String
-        get() = prefs.getString(K_API_KEY, null) ?: BuildConfig.GEMINI_API_KEY
-        set(v) = prefs.edit { putString(K_API_KEY, v.trim()) }
+        get() = leer(K_API_KEY, BuildConfig.GEMINI_API_KEY)
+        set(v) = guardar(K_API_KEY, v, BuildConfig.GEMINI_API_KEY)
 
     var geminiModel: String
-        get() = (prefs.getString(K_MODELO, null) ?: BuildConfig.GEMINI_MODEL).ifBlank { BuildConfig.GEMINI_MODEL }
-        set(v) = prefs.edit { putString(K_MODELO, v.trim()) }
+        get() = leer(K_MODELO, BuildConfig.GEMINI_MODEL)
+        set(v) = guardar(K_MODELO, v, BuildConfig.GEMINI_MODEL)
 
     var otaUrl: String
-        get() = prefs.getString(K_OTA_URL, null) ?: BuildConfig.OTA_UPDATE_URL
-        set(v) = prefs.edit { putString(K_OTA_URL, v.trim()) }
+        get() = leer(K_OTA_URL, BuildConfig.OTA_UPDATE_URL)
+        set(v) = guardar(K_OTA_URL, v, BuildConfig.OTA_UPDATE_URL)
+
+    /** Un valor guardado vacío se ignora: así no tapa el que trae la compilación. */
+    private fun leer(clave: String, defecto: String): String =
+        prefs.getString(clave, null)?.takeIf { it.isNotBlank() } ?: defecto
+
+    /**
+     * Solo se guarda lo que el usuario ha cambiado de verdad. Si queda vacío o igual al valor por defecto
+     * se borra, para que las compilaciones futuras puedan actualizar ese valor por defecto.
+     */
+    private fun guardar(clave: String, valor: String, defecto: String) {
+        val v = valor.trim()
+        prefs.edit { if (v.isEmpty() || v == defecto) remove(clave) else putString(clave, v) }
+    }
 
     var otaAutoComprobar: Boolean
         get() = prefs.getBoolean(K_OTA_AUTO, true)

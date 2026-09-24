@@ -7,3 +7,5 @@ local.properties
 *.apk
 *.keystore
 *.jks
+# Los APK publicados para la OTA sí se versionan
+!releases/*.apk
