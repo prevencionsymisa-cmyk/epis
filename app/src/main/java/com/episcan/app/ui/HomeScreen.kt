@@ -273,29 +273,18 @@ private fun FilaEpi(epi: EpiEntity, onClick: () -> Unit) {
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
-        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            val primera = epi.listaFotos().firstOrNull()
-            if (primera != null) {
-                AsyncImage(
-                    model = File(primera),
-                    contentDescription = "Foto de ${epi.nombreEpi}",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(72.dp).clip(RoundedCornerShape(8.dp)),
-                )
-            } else {
-                Box(
-                    Modifier.size(72.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Default.CameraAlt, null, tint = MaterialTheme.colorScheme.outline) }
-            }
+        Row(
+            Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 BadgeParte(epi.parteCuerpo, compacto = true)
+                // Nombre completo: si es largo pasa a más líneas en vez de cortarse
                 Text(
                     epi.nombreEpi,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
                 val resumen = listOf(epi.marca, epi.modelo, epi.normativa).filter { it.isNotBlank() }.joinToString(" · ")
                 Text(
