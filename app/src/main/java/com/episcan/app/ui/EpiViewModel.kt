@@ -224,6 +224,39 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * En vez de crear una ficha repetida, suma las fotos nuevas a la ficha [existente] y completa
+     * los campos que ésta tuviera vacíos. Las fotos que no caben (máximo [MAX_FOTOS]) se descartan.
+     */
+    fun fusionarEnExistente(b: EpiBorrador, existente: EpiEntity) {
+        viewModelScope.launch {
+            val fotosActuales = existente.listaFotos()
+            val caben = (MAX_FOTOS - fotosActuales.size).coerceAtLeast(0)
+            val nuevas = b.fotos.take(caben)
+            val sobrantes = b.fotos.drop(caben)
+            repo.guardar(
+                existente.copy(
+                    marca = existente.marca.ifBlank { b.marca.trim() },
+                    modelo = existente.modelo.ifBlank { b.modelo.trim() },
+                    normativa = existente.normativa.ifBlank { b.normativa.trim() },
+                    simbolos = existente.simbolos.ifBlank { b.simbolos.trim() },
+                    distribuidor = existente.distribuidor.ifBlank { b.distribuidor.trim() },
+                    observaciones = existente.observaciones.ifBlank { b.observaciones.trim() },
+                    fotos = (fotosActuales + nuevas).joinToString(EpiEntity.SEPARADOR_FOTOS),
+                ),
+            )
+            repo.borrarArchivos(sobrantes)
+            editor = null
+            mensaje(
+                when {
+                    nuevas.isEmpty() && sobrantes.isNotEmpty() -> "La ficha ya tiene $MAX_FOTOS fotos; no se añadió ninguna"
+                    sobrantes.isNotEmpty() -> "Se añadieron ${nuevas.size} fotos (máximo $MAX_FOTOS por ficha)"
+                    else -> "Fotos añadidas a la ficha existente"
+                },
+            )
+        }
+    }
+
     fun cancelarEditor() {
         val e = editor ?: return
         editor = null

@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -42,7 +43,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.episcan.app.data.FichaClave
 import com.episcan.app.data.PARTES_CUERPO
+import com.episcan.app.data.buscarDuplicado
+import com.episcan.app.data.local.EpiEntity
 import java.io.File
 
 /** Bottom Sheet de validación: el técnico revisa y corrige la ficha antes de guardarla. */
@@ -50,7 +54,9 @@ import java.io.File
 @Composable
 fun EditorSheet(
     borrador: EpiBorrador,
+    existentes: List<EpiEntity>,
     onGuardar: (EpiBorrador) -> Unit,
+    onFusionar: (EpiBorrador, EpiEntity) -> Unit,
     onCancelar: () -> Unit,
 ) {
     val estado = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -64,6 +70,12 @@ fun EditorSheet(
     var observaciones by remember(borrador) { mutableStateOf(borrador.observaciones) }
     var menuParte by remember { mutableStateOf(false) }
     val valido = parte.isNotBlank() && nombre.isNotBlank()
+    // Se recalcula al teclear: si el técnico corrige marca o modelo, el aviso aparece o desaparece
+    val duplicado = remember(nombre, marca, modelo, existentes) {
+        if (nombre.isBlank() && modelo.isBlank()) null
+        else buscarDuplicado(FichaClave(nombre, marca, modelo), existentes, ignorarId = borrador.id)
+    }
+    val esNueva = borrador.id == 0L
 
     ModalBottomSheet(onDismissRequest = onCancelar, sheetState = estado) {
         Column(
@@ -90,6 +102,59 @@ fun EditorSheet(
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
+                    }
+                }
+            }
+
+            if (duplicado != null) {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
+                            Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.onErrorContainer)
+                            Column {
+                                Text(
+                                    "Posible duplicado: este EPI ya está en el catálogo",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                )
+                                Text(
+                                    listOf(duplicado.nombreEpi, duplicado.marca, duplicado.modelo).filter { it.isNotBlank() }.joinToString(" · "),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                )
+                                Text(
+                                    duplicado.parteCuerpo,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                )
+                            }
+                        }
+                        if (esNueva) {
+                            Button(
+                                onClick = {
+                                    onFusionar(
+                                        borrador.copy(
+                                            marca = marca, modelo = modelo, normativa = normativa, simbolos = simbolos,
+                                            distribuidor = distribuidor, observaciones = observaciones,
+                                        ),
+                                        duplicado,
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth().height(52.dp),
+                            ) { Text("Añadir mis fotos a la ficha existente") }
+                            Text(
+                                "Si es una variante distinta (otra talla, color o versión), puedes guardarla como ficha nueva.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                        } else {
+                            Text(
+                                "Al modificar esta ficha coincide con otra. Revisa que no estén repetidas.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                        }
                     }
                 }
             }
@@ -152,7 +217,7 @@ fun EditorSheet(
                     },
                     enabled = valido,
                     modifier = Modifier.weight(1f).height(56.dp),
-                ) { Text("Guardar", fontWeight = FontWeight.Bold) }
+                ) { Text(if (duplicado != null && esNueva) "Guardar como nueva" else "Guardar", fontWeight = FontWeight.Bold) }
             }
         }
     }

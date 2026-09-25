@@ -1,8 +1,8 @@
 {
-  "latestVersionCode": 6,
-  "latestVersionName": "1.0.5",
-  "apkUrl": "https://raw.githubusercontent.com/prevencionsymisa-cmyk/epis/main/releases/epi-scan-v1.0.5.apk",
-  "releaseNotes": "Las actualizaciones futuras se detectan al momento, sin esperar a la caché de GitHub.",
+  "latestVersionCode": 7,
+  "latestVersionName": "1.0.6",
+  "apkUrl": "https://raw.githubusercontent.com/prevencionsymisa-cmyk/epis/main/releases/epi-scan-v1.0.6.apk",
+  "releaseNotes": "Aviso de EPI duplicado al añadir o modificar una ficha, con opción de añadir las fotos a la ficha existente.",
   "mandatory": false,
-  "sha256": "a6ae62acaebe6cd2bb76435a583ad788a8db78b065d9be1b35a59a97436b7bee"
+  "sha256": "1cb04645ae10374749d39331c6f197cb5e76c46dfe247e349c3fd2ab18b52824"
 }

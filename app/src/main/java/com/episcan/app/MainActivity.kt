@@ -14,6 +14,8 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.core.content.FileProvider
@@ -96,7 +98,16 @@ class MainActivity : ComponentActivity() {
             Pantalla.Ajustes -> SettingsScreen(vm, snackbar)
         }
 
-        vm.editor?.let { EditorSheet(borrador = it, onGuardar = vm::guardar, onCancelar = vm::cancelarEditor) }
+        val todos by vm.todos.collectAsState()
+        vm.editor?.let {
+            EditorSheet(
+                borrador = it,
+                existentes = todos,
+                onGuardar = vm::guardar,
+                onFusionar = vm::fusionarEnExistente,
+                onCancelar = vm::cancelarEditor,
+            )
+        }
         vm.ota?.let {
             OtaDialog(it, onDescargar = vm::descargarActualizacion, onInstalar = vm::instalarActualizacion, onDescartar = vm::descartarActualizacion)
         }
