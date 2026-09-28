@@ -43,10 +43,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import androidx.compose.runtime.LaunchedEffect
 import com.episcan.app.data.FichaClave
 import com.episcan.app.data.PARTES_CUERPO
 import com.episcan.app.data.buscarDuplicado
 import com.episcan.app.data.local.EpiEntity
+import com.episcan.app.data.subcategoriasDe
 import java.io.File
 
 /** Bottom Sheet de validación: el técnico revisa y corrige la ficha antes de guardarla. */
@@ -61,14 +63,22 @@ fun EditorSheet(
 ) {
     val estado = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var parte by remember(borrador) { mutableStateOf(borrador.parteCuerpo) }
+    var subcategoria by remember(borrador) { mutableStateOf(borrador.subcategoria) }
     var nombre by remember(borrador) { mutableStateOf(borrador.nombreEpi) }
     var marca by remember(borrador) { mutableStateOf(borrador.marca) }
     var modelo by remember(borrador) { mutableStateOf(borrador.modelo) }
     var normativa by remember(borrador) { mutableStateOf(borrador.normativa) }
     var simbolos by remember(borrador) { mutableStateOf(borrador.simbolos) }
+    var fichaTecnica by remember(borrador) { mutableStateOf(borrador.fichaTecnica) }
     var distribuidor by remember(borrador) { mutableStateOf(borrador.distribuidor) }
     var observaciones by remember(borrador) { mutableStateOf(borrador.observaciones) }
     var menuParte by remember { mutableStateOf(false) }
+    var menuSubcategoria by remember { mutableStateOf(false) }
+    val opcionesSubcategoria = remember(parte) { subcategoriasDe(parte) }
+    // Si se cambia la zona, la subcategoría anterior deja de ser válida
+    LaunchedEffect(parte) {
+        if (subcategoria !in opcionesSubcategoria) subcategoria = ""
+    }
     val valido = parte.isNotBlank() && nombre.isNotBlank()
     // Se recalcula al teclear: si el técnico corrige marca o modelo, el aviso aparece o desaparece
     val duplicado = remember(nombre, marca, modelo, existentes) {
@@ -135,8 +145,9 @@ fun EditorSheet(
                                 onClick = {
                                     onFusionar(
                                         borrador.copy(
-                                            marca = marca, modelo = modelo, normativa = normativa, simbolos = simbolos,
-                                            distribuidor = distribuidor, observaciones = observaciones,
+                                            subcategoria = subcategoria, marca = marca, modelo = modelo, normativa = normativa,
+                                            simbolos = simbolos, fichaTecnica = fichaTecnica, distribuidor = distribuidor,
+                                            observaciones = observaciones,
                                         ),
                                         duplicado,
                                     )
@@ -195,12 +206,36 @@ fun EditorSheet(
                 }
             }
 
+            // Subcategoría: depende de la zona elegida arriba
+            ExposedDropdownMenuBox(expanded = menuSubcategoria, onExpandedChange = { if (parte.isNotBlank()) menuSubcategoria = it }) {
+                OutlinedTextField(
+                    value = subcategoria,
+                    onValueChange = {},
+                    readOnly = true,
+                    enabled = parte.isNotBlank(),
+                    label = { Text("Subcategoría") },
+                    placeholder = { if (parte.isBlank()) Text("Selecciona antes la parte del cuerpo") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = menuSubcategoria) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth(),
+                )
+                ExposedDropdownMenu(expanded = menuSubcategoria, onDismissRequest = { menuSubcategoria = false }) {
+                    opcionesSubcategoria.forEach { s ->
+                        DropdownMenuItem(
+                            text = { Text(s) },
+                            onClick = { subcategoria = s; menuSubcategoria = false },
+                            modifier = Modifier.height(52.dp),
+                        )
+                    }
+                }
+            }
+
             Campo("Nombre del EPI *", nombre, { nombre = it }, esError = nombre.isBlank())
             Campo("Notas descriptivas / observaciones", observaciones, { observaciones = it }, lineas = 2)
             Campo("Marca / Fabricante", marca, { marca = it })
             Campo("Modelo / Referencia", modelo, { modelo = it })
             Campo("Normativa(s) EN / ISO / marcado CE", normativa, { normativa = it }, lineas = 2)
             Campo("Símbolos, pictogramas y significado", simbolos, { simbolos = it }, lineas = 6)
+            Campo("Ficha técnica (código o referencia del fabricante)", fichaTecnica, { fichaTecnica = it })
             Campo("Distribuidor / Proveedor", distribuidor, { distribuidor = it })
 
             Row(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -209,9 +244,9 @@ fun EditorSheet(
                     onClick = {
                         onGuardar(
                             borrador.copy(
-                                parteCuerpo = parte, nombreEpi = nombre, marca = marca, modelo = modelo,
-                                normativa = normativa, simbolos = simbolos, distribuidor = distribuidor,
-                                observaciones = observaciones,
+                                parteCuerpo = parte, subcategoria = subcategoria, nombreEpi = nombre, marca = marca,
+                                modelo = modelo, normativa = normativa, simbolos = simbolos, fichaTecnica = fichaTecnica,
+                                distribuidor = distribuidor, observaciones = observaciones,
                             ),
                         )
                     },

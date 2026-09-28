@@ -19,12 +19,14 @@ class XlsxWriterTest {
 
     private fun fila(n: Int, conFoto: Boolean) = FilaExcel(
         parteCuerpo = "Manos y Brazos",
+        subcategoria = "Protección mecánica",
         nombreEpi = "Guantes de protección mecánica $n & <precisión>",
         observaciones = "Talla 9, color gris\ncon puños",
         marca = "RECA",
         modelo = "PROTECT 204",
         normativa = "EN 388:2016 · CE Cat. II",
         simbolos = "Abrasión nivel 4\nCorte nivel 1\nDesgarro nivel 2\nPunción nivel 3\u0001",
+        fichaTecnica = "FT-204-ES",
         distribuidor = "",
         miniatura = if (conFoto) Miniatura(jpegMinimo, 120, 90) else null,
     )
@@ -66,9 +68,13 @@ class XlsxWriterTest {
         assertTrue(hoja.contains("REGISTRO TÉCNICO Y HOMOLOGACIÓN DE EQUIPOS DE PROTECCIÓN INDIVIDUAL (EPI)"))
         assertTrue(hoja.contains("Total de EPIs registrados: 3"))
         assertTrue(hoja.contains("""<pane ySplit="4" topLeftCell="A5""""))
-        assertTrue(hoja.contains("""<autoFilter ref="A4:H7"/>"""))
+        assertTrue(hoja.contains("""<autoFilter ref="A4:J7"/>"""))
         assertTrue("escapa & y <", hoja.contains("&amp; &lt;precisión&gt;"))
         assertTrue("elimina caracteres de control", !hoja.contains('\u0001'))
+        assertTrue("cabecera Subcategoría", hoja.contains("Subcategoría"))
+        assertTrue("cabecera Ficha técnica", hoja.contains("Ficha técnica"))
+        assertTrue("dato de subcategoría", hoja.contains("Protección mecánica"))
+        assertTrue("dato de ficha técnica", hoja.contains("FT-204-ES"))
         // La miniatura de la fila 3 (índice 2) cuelga de la fila 7 (base 0 = 6)
         assertTrue(partes.getValue("xl/drawings/drawing1.xml").decodeToString().contains("<xdr:row>6</xdr:row>"))
     }
@@ -79,6 +85,6 @@ class XlsxWriterTest {
         assertTrue("xl/drawings/drawing1.xml" !in partes)
         val hoja = partes.getValue("xl/worksheets/sheet1.xml").decodeToString()
         assertTrue(hoja.contains("Total de EPIs registrados: 0"))
-        assertTrue(hoja.contains("""<autoFilter ref="A4:H4"/>"""))
+        assertTrue(hoja.contains("""<autoFilter ref="A4:J4"/>"""))
     }
 }

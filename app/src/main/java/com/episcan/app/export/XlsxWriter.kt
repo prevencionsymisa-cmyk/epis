@@ -12,12 +12,14 @@ class Miniatura(val bytes: ByteArray, val ancho: Int, val alto: Int)
 
 class FilaExcel(
     val parteCuerpo: String,
+    val subcategoria: String,
     val nombreEpi: String,
     val observaciones: String,
     val marca: String,
     val modelo: String,
     val normativa: String,
     val simbolos: String,
+    val fichaTecnica: String,
     val distribuidor: String,
     val miniatura: Miniatura?,
 )
@@ -27,18 +29,35 @@ class FilaExcel(
  * (usa java.awt) y aquí solo se necesita una hoja con estilos, filtros e imágenes.
  */
 object XlsxWriter {
+    // Índices de columna con nombre: evitan desalinear los datos al leer/tocar el resto del archivo.
+    private const val COL_PARTE = 0
+    private const val COL_SUBCATEGORIA = 1
+    private const val COL_NOMBRE = 2
+    private const val COL_MARCA = 3
+    private const val COL_MODELO = 4
+    private const val COL_NORMATIVA = 5
+    private const val COL_SIMBOLOS = 6
+    private const val COL_FICHA_TECNICA = 7
+    private const val COL_DISTRIBUIDOR = 8
+    private const val COL_MINIATURA = 9
+
     private val ENCABEZADOS = listOf(
         "Parte del cuerpo que protege",
+        "Subcategoría",
         "Nombre del EPI",
         "Marca / Fabricante",
         "Modelo / Referencia",
         "Normativa(s)",
         "Símbolos, pictogramas y significado",
+        "Ficha técnica",
         "Distribuidor / Proveedor",
         "Miniatura",
     )
-    private val ANCHOS = listOf(20.0, 34.0, 18.0, 20.0, 26.0, 62.0, 22.0, 20.0)
-    private val ESTILO_CABECERA = listOf(S_CAB_NARANJA, S_CAB_PIZARRA, S_CAB_GRIS, S_CAB_GRIS, S_CAB_GRIS, S_CAB_INDIGO, S_CAB_GRIS, S_CAB_GRIS)
+    private val ANCHOS = listOf(20.0, 20.0, 34.0, 18.0, 20.0, 26.0, 62.0, 18.0, 22.0, 20.0)
+    private val ESTILO_CABECERA = listOf(
+        S_CAB_NARANJA, S_CAB_GRIS, S_CAB_PIZARRA, S_CAB_GRIS, S_CAB_GRIS,
+        S_CAB_GRIS, S_CAB_INDIGO, S_CAB_GRIS, S_CAB_GRIS, S_CAB_GRIS,
+    )
 
     private const val FILA_CABECERA = 4
     private const val PRIMERA_FILA_DATOS = 5
@@ -238,14 +257,16 @@ ${xf(4, 7, 1, datos)}
             val normal = if (zebra) S_DATO_ZEBRA else S_DATO
             val negrita = if (zebra) S_DATO_ZEBRA_NEGRITA else S_DATO_NEGRITA
             sb.append("""<row r="$r" ht="${altoFila(f)}" customHeight="1">""")
-            sb.append(celda("A$r", negrita, f.parteCuerpo))
-            sb.append(celdaNombre("B$r", normal, f.nombreEpi, f.observaciones))
-            sb.append(celda("C$r", normal, f.marca))
-            sb.append(celda("D$r", normal, f.modelo))
-            sb.append(celda("E$r", normal, f.normativa))
-            sb.append(celda("F$r", normal, f.simbolos))
-            sb.append(celda("G$r", normal, f.distribuidor))
-            sb.append(celda("H$r", normal, null)) // aquí flota la miniatura
+            sb.append(celda("${letra(COL_PARTE)}$r", negrita, f.parteCuerpo))
+            sb.append(celda("${letra(COL_SUBCATEGORIA)}$r", normal, f.subcategoria))
+            sb.append(celdaNombre("${letra(COL_NOMBRE)}$r", normal, f.nombreEpi, f.observaciones))
+            sb.append(celda("${letra(COL_MARCA)}$r", normal, f.marca))
+            sb.append(celda("${letra(COL_MODELO)}$r", normal, f.modelo))
+            sb.append(celda("${letra(COL_NORMATIVA)}$r", normal, f.normativa))
+            sb.append(celda("${letra(COL_SIMBOLOS)}$r", normal, f.simbolos))
+            sb.append(celda("${letra(COL_FICHA_TECNICA)}$r", normal, f.fichaTecnica))
+            sb.append(celda("${letra(COL_DISTRIBUIDOR)}$r", normal, f.distribuidor))
+            sb.append(celda("${letra(COL_MINIATURA)}$r", normal, null)) // aquí flota la miniatura
             sb.append("</row>")
         }
         sb.append("</sheetData>")
@@ -261,10 +282,12 @@ ${xf(4, 7, 1, datos)}
 
     /** Altura adaptativa: estima las líneas que ocupa el texto envuelto en cada columna. */
     private fun altoFila(f: FilaExcel): Double {
+        // El orden debe coincidir con ANCHOS[COL_PARTE..COL_DISTRIBUIDOR]; la miniatura no necesita estimación de texto.
         val textos = listOf(
             f.parteCuerpo,
+            f.subcategoria,
             if (f.observaciones.isBlank()) f.nombreEpi else f.nombreEpi + "\n" + f.observaciones,
-            f.marca, f.modelo, f.normativa, f.simbolos, f.distribuidor,
+            f.marca, f.modelo, f.normativa, f.simbolos, f.fichaTecnica, f.distribuidor,
         )
         val lineas = textos.mapIndexed { i, t -> lineasEstimadas(t, ANCHOS[i]) }.max()
         val minimo = if (f.miniatura != null) ALTO_MIN_CON_FOTO else ALTO_MIN_SIN_FOTO

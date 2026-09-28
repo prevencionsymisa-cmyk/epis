@@ -10,11 +10,15 @@ import androidx.room.PrimaryKey
 data class EpiEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val parteCuerpo: String,
+    /** Subtipo dentro de la parte del cuerpo (p. ej. "Protección mecánica"). Siempre uno de [com.episcan.app.data.SUBCATEGORIAS]. */
+    val subcategoria: String = "",
     val nombreEpi: String,
     val marca: String = "",
     val modelo: String = "",
     val normativa: String = "",
     val simbolos: String = "",
+    /** Referencia o código de la ficha técnica del fabricante (no el texto completo del documento). */
+    val fichaTecnica: String = "",
     val distribuidor: String = "",
     val observaciones: String = "",
     /** Rutas absolutas de las fotos comprimidas, separadas por '|'. La primera es la miniatura. */

@@ -11,6 +11,7 @@ import androidx.lifecycle.viewModelScope
 import com.episcan.app.EpiApp
 import com.episcan.app.data.PARTES_CUERPO
 import com.episcan.app.data.ResultadoIa
+import com.episcan.app.data.subcategoriasDe
 import com.episcan.app.data.local.EpiEntity
 import com.episcan.app.data.remote.ErrorAnalisis
 import com.episcan.app.export.FilaExcel
@@ -43,11 +44,13 @@ enum class Pantalla { Inicio, Captura, Ajustes }
 data class EpiBorrador(
     val id: Long = 0,
     val parteCuerpo: String = "",
+    val subcategoria: String = "",
     val nombreEpi: String = "",
     val marca: String = "",
     val modelo: String = "",
     val normativa: String = "",
     val simbolos: String = "",
+    val fichaTecnica: String = "",
     val distribuidor: String = "",
     val observaciones: String = "",
     val fotos: List<String> = emptyList(),
@@ -76,6 +79,19 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
     /** Zona seleccionada en los chips (null = todas). Si la zona se queda sin fichas se ignora. */
     val zonaFiltro = MutableStateFlow<String?>(null)
 
+    /** Subcategoría seleccionada dentro de la zona activa (null = todas). Se limpia al cambiar de zona. */
+    val subcategoriaFiltro = MutableStateFlow<String?>(null)
+
+    /** Cambia la zona filtrada y limpia la subcategoría, porque pertenece a la zona anterior. */
+    fun elegirZona(zona: String?) {
+        zonaFiltro.value = zona
+        subcategoriaFiltro.value = null
+    }
+
+    fun elegirSubcategoria(sub: String?) {
+        subcategoriaFiltro.value = sub
+    }
+
     /** Catálogo completo, sin filtros (lo usa la hoja de detalle para reflejar ediciones al instante). */
     val todos: StateFlow<List<EpiEntity>> = repo.observarTodos()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -85,12 +101,20 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
         PARTES_CUERPO.map { zona -> zona to lista.count { it.parteCuerpo == zona } }.filter { it.second > 0 }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val epis: StateFlow<List<EpiEntity>> = combine(repo.observarTodos(), consulta, zonaFiltro) { lista, q, zona ->
+    /** Subcategorías con fichas dentro de la zona filtrada actual (vacío si no hay zona elegida). */
+    val conteoSubcategorias: StateFlow<List<Pair<String, Int>>> = combine(repo.observarTodos(), zonaFiltro) { lista, zona ->
+        if (zona == null) emptyList()
+        else subcategoriasDe(zona).map { sub -> sub to lista.count { it.parteCuerpo == zona && it.subcategoria == sub } }.filter { it.second > 0 }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val epis: StateFlow<List<EpiEntity>> = combine(repo.observarTodos(), consulta, zonaFiltro, subcategoriaFiltro) { lista, q, zona, sub ->
         val t = q.trim()
         val zonaActiva = zona?.takeIf { z -> lista.any { it.parteCuerpo == z } }
+        val subActiva = sub?.takeIf { s -> lista.any { it.parteCuerpo == zonaActiva && it.subcategoria == s } }
         lista.filter { e ->
             (zonaActiva == null || e.parteCuerpo == zonaActiva) &&
-                (t.isEmpty() || listOf(e.parteCuerpo, e.nombreEpi, e.marca, e.modelo, e.normativa, e.simbolos, e.distribuidor, e.observaciones)
+                (subActiva == null || e.subcategoria == subActiva) &&
+                (t.isEmpty() || listOf(e.parteCuerpo, e.subcategoria, e.nombreEpi, e.marca, e.modelo, e.normativa, e.simbolos, e.fichaTecnica, e.distribuidor, e.observaciones)
                     .any { it.contains(t, ignoreCase = true) })
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -188,9 +212,10 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun abrirEditorDesdeBorrador(r: ResultadoIa, propuestaIa: Boolean) {
         editor = EpiBorrador(
-            parteCuerpo = r.parteCuerpo, nombreEpi = r.nombreEpi, marca = r.marca, modelo = r.modelo,
-            normativa = r.normativa, simbolos = r.simbolos, distribuidor = r.distribuidor,
-            observaciones = r.observaciones, fotos = fotosBorrador.toList(), propuestaIa = propuestaIa,
+            parteCuerpo = r.parteCuerpo, subcategoria = r.subcategoria, nombreEpi = r.nombreEpi, marca = r.marca,
+            modelo = r.modelo, normativa = r.normativa, simbolos = r.simbolos, fichaTecnica = r.fichaTecnica,
+            distribuidor = r.distribuidor, observaciones = r.observaciones,
+            fotos = fotosBorrador.toList(), propuestaIa = propuestaIa,
         )
         fotosBorrador.clear() // ahora las fotos pertenecen al editor
         pantalla = Pantalla.Inicio
@@ -202,9 +227,9 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
 
     fun editar(epi: EpiEntity) {
         editor = EpiBorrador(
-            id = epi.id, parteCuerpo = epi.parteCuerpo, nombreEpi = epi.nombreEpi, marca = epi.marca,
-            modelo = epi.modelo, normativa = epi.normativa, simbolos = epi.simbolos,
-            distribuidor = epi.distribuidor, observaciones = epi.observaciones,
+            id = epi.id, parteCuerpo = epi.parteCuerpo, subcategoria = epi.subcategoria, nombreEpi = epi.nombreEpi,
+            marca = epi.marca, modelo = epi.modelo, normativa = epi.normativa, simbolos = epi.simbolos,
+            fichaTecnica = epi.fichaTecnica, distribuidor = epi.distribuidor, observaciones = epi.observaciones,
             fotos = epi.listaFotos(), creadoEn = epi.creadoEn,
         )
     }
@@ -213,9 +238,9 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             repo.guardar(
                 EpiEntity(
-                    id = b.id, parteCuerpo = b.parteCuerpo, nombreEpi = b.nombreEpi.trim(), marca = b.marca.trim(),
-                    modelo = b.modelo.trim(), normativa = b.normativa.trim(), simbolos = b.simbolos.trim(),
-                    distribuidor = b.distribuidor.trim(), observaciones = b.observaciones.trim(),
+                    id = b.id, parteCuerpo = b.parteCuerpo, subcategoria = b.subcategoria, nombreEpi = b.nombreEpi.trim(),
+                    marca = b.marca.trim(), modelo = b.modelo.trim(), normativa = b.normativa.trim(), simbolos = b.simbolos.trim(),
+                    fichaTecnica = b.fichaTecnica.trim(), distribuidor = b.distribuidor.trim(), observaciones = b.observaciones.trim(),
                     fotos = b.fotos.joinToString(EpiEntity.SEPARADOR_FOTOS), creadoEn = b.creadoEn,
                 ),
             )
@@ -236,10 +261,12 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
             val sobrantes = b.fotos.drop(caben)
             repo.guardar(
                 existente.copy(
+                    subcategoria = existente.subcategoria.ifBlank { b.subcategoria },
                     marca = existente.marca.ifBlank { b.marca.trim() },
                     modelo = existente.modelo.ifBlank { b.modelo.trim() },
                     normativa = existente.normativa.ifBlank { b.normativa.trim() },
                     simbolos = existente.simbolos.ifBlank { b.simbolos.trim() },
+                    fichaTecnica = existente.fichaTecnica.ifBlank { b.fichaTecnica.trim() },
                     distribuidor = existente.distribuidor.ifBlank { b.distribuidor.trim() },
                     observaciones = existente.observaciones.ifBlank { b.observaciones.trim() },
                     fotos = (fotosActuales + nuevas).joinToString(EpiEntity.SEPARADOR_FOTOS),
@@ -304,9 +331,9 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
         val lista = repo.obtenerTodos()
         val filas = lista.map { e ->
             FilaExcel(
-                parteCuerpo = e.parteCuerpo, nombreEpi = e.nombreEpi, observaciones = e.observaciones,
+                parteCuerpo = e.parteCuerpo, subcategoria = e.subcategoria, nombreEpi = e.nombreEpi, observaciones = e.observaciones,
                 marca = e.marca, modelo = e.modelo, normativa = e.normativa, simbolos = e.simbolos,
-                distribuidor = e.distribuidor,
+                fichaTecnica = e.fichaTecnica, distribuidor = e.distribuidor,
                 miniatura = e.listaFotos().firstOrNull()?.let { ImageUtils.miniatura(File(it)) },
             )
         }

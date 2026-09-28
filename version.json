@@ -1,8 +1,8 @@
 {
-  "latestVersionCode": 7,
-  "latestVersionName": "1.0.6",
-  "apkUrl": "https://raw.githubusercontent.com/prevencionsymisa-cmyk/epis/main/releases/epi-scan-v1.0.6.apk",
-  "releaseNotes": "Aviso de EPI duplicado al añadir o modificar una ficha, con opción de añadir las fotos a la ficha existente.",
+  "latestVersionCode": 8,
+  "latestVersionName": "1.0.7",
+  "apkUrl": "https://raw.githubusercontent.com/prevencionsymisa-cmyk/epis/main/releases/epi-scan-v1.0.7.apk",
+  "releaseNotes": "Nueva subcategoría por zona (con filtro en el catálogo) y campo de ficha técnica del fabricante, antes del distribuidor. También en el Excel.",
   "mandatory": false,
-  "sha256": "1cb04645ae10374749d39331c6f197cb5e76c46dfe247e349c3fd2ab18b52824"
+  "sha256": "eff396f589f9ea3b7b67930a6e844601b332fc57fb29b94321f778d4fc0cb4a9"
 }

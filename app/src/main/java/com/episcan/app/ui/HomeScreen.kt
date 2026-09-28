@@ -90,6 +90,8 @@ fun HomeScreen(
     val todos by vm.todos.collectAsState()
     val zonas by vm.conteoZonas.collectAsState()
     val zonaElegida by vm.zonaFiltro.collectAsState()
+    val subcategorias by vm.conteoSubcategorias.collectAsState()
+    val subcategoriaElegida by vm.subcategoriaFiltro.collectAsState()
     val total by vm.total.collectAsState()
     val consulta by vm.consulta.collectAsState()
     var menuExportar by remember { mutableStateOf(false) }
@@ -98,9 +100,10 @@ fun HomeScreen(
 
     // La zona elegida solo cuenta si todavía tiene fichas
     val zonaActiva = zonaElegida?.takeIf { z -> zonas.any { it.first == z } }
+    val subcategoriaActiva = subcategoriaElegida?.takeIf { s -> subcategorias.any { it.first == s } }
     // Se busca en la lista completa: si la ficha se borra o cambia, la hoja se actualiza o se cierra sola
     val detalle = todos.firstOrNull { it.id == detalleId }
-    val filtrando = zonaActiva != null || consulta.isNotBlank()
+    val filtrando = zonaActiva != null || subcategoriaActiva != null || consulta.isNotBlank()
 
     Scaffold(
         topBar = {
@@ -177,15 +180,32 @@ fun HomeScreen(
                     item {
                         FilterChip(
                             selected = zonaActiva == null,
-                            onClick = { vm.zonaFiltro.value = null },
+                            onClick = { vm.elegirZona(null) },
                             label = { Text("Todos ($total)") },
                         )
                     }
                     items(zonas, key = { it.first }) { (zona, n) ->
                         FilterChip(
                             selected = zonaActiva == zona,
-                            onClick = { vm.zonaFiltro.value = if (zonaActiva == zona) null else zona },
+                            onClick = { vm.elegirZona(if (zonaActiva == zona) null else zona) },
                             label = { Text("$zona ($n)") },
+                        )
+                    }
+                }
+            }
+
+            // Subcategorías de la zona elegida: segunda fila de chips, solo si hay más de una
+            if (zonaActiva != null && subcategorias.size > 1) {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(bottom = 4.dp),
+                ) {
+                    items(subcategorias, key = { it.first }) { (sub, n) ->
+                        FilterChip(
+                            selected = subcategoriaActiva == sub,
+                            onClick = { vm.elegirSubcategoria(if (subcategoriaActiva == sub) null else sub) },
+                            label = { Text("$sub ($n)") },
                         )
                     }
                 }
@@ -279,7 +299,18 @@ private fun FilaEpi(epi: EpiEntity, onClick: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                BadgeParte(epi.parteCuerpo, compacto = true)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    BadgeParte(epi.parteCuerpo, compacto = true)
+                    if (epi.subcategoria.isNotBlank()) {
+                        Text(
+                            epi.subcategoria,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
                 // Nombre completo: si es largo pasa a más líneas en vez de cortarse
                 Text(
                     epi.nombreEpi,
@@ -320,7 +351,12 @@ private fun DetalleSheet(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            BadgeParte(epi.parteCuerpo)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                BadgeParte(epi.parteCuerpo)
+                if (epi.subcategoria.isNotBlank()) {
+                    Text(epi.subcategoria, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             Column {
                 Text(epi.nombreEpi, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 if (epi.observaciones.isNotBlank()) {
@@ -345,6 +381,7 @@ private fun DetalleSheet(
                 Text(epi.simbolos.ifBlank { "—" }, style = MaterialTheme.typography.bodyMedium)
             }
 
+            Dato("Ficha técnica", epi.fichaTecnica, Modifier.fillMaxWidth())
             Dato("Distribuidor", epi.distribuidor, Modifier.fillMaxWidth())
 
             val fotos = epi.listaFotos()

@@ -4,6 +4,8 @@ import android.util.Base64
 import com.episcan.app.data.PARTES_CUERPO
 import com.episcan.app.data.ResultadoIa
 import com.episcan.app.data.SettingsStore
+import com.episcan.app.data.normalizar
+import com.episcan.app.data.subcategoriasDe
 import com.google.gson.Gson
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
@@ -20,8 +22,6 @@ class EpiAnalyzer(
     private val api: GeminiApi,
     private val ajustes: SettingsStore,
 ) {
-    private val gson = Gson()
-
     suspend fun analizar(fotos: List<File>): ResultadoIa {
         val clave = ajustes.geminiApiKey
         if (clave.isBlank()) throw ErrorAnalisis("Falta la clave de Gemini. Introdúcela en Ajustes.")
@@ -99,17 +99,21 @@ class EpiAnalyzer(
                     addProperty("type", "STRING")
                     add("enum", JsonArray().apply { PARTES_CUERPO.forEach { add(it) } })
                 })
+                add("subcategoria", texto("Subtipo del EPI dentro de esa zona; debe ser una de las opciones listadas en las instrucciones para esa zona, escrita exactamente igual"))
                 add("nombreEpi", texto("Denominación técnica oficial del EPI"))
                 add("marca", texto("Marca o fabricante visible; cadena vacía si no se ve"))
                 add("modelo", texto("Referencia o modelo serigrafiado; cadena vacía si no se ve"))
                 add("normativa", texto("Normas EN/ISO y marcado CE detectados, separados por ' · '"))
                 add("simbolos", texto("Explicación técnica detallada de cada pictograma y código"))
+                add("fichaTecnica", texto("Código o referencia de la ficha técnica del fabricante si aparece impreso o en un QR/URL; cadena vacía si no consta"))
                 add("distribuidor", texto("Distribuidor/importador solo si consta en el etiquetado; si no, cadena vacía"))
                 add("observaciones", texto("Colores, talla, acabado y notas relevantes"))
             })
             add("required", JsonArray().apply {
-                listOf("parteCuerpo", "nombreEpi", "marca", "modelo", "normativa", "simbolos", "distribuidor", "observaciones")
-                    .forEach { add(it) }
+                listOf(
+                    "parteCuerpo", "subcategoria", "nombreEpi", "marca", "modelo", "normativa",
+                    "simbolos", "fichaTecnica", "distribuidor", "observaciones",
+                ).forEach { add(it) }
             })
         }
     }
@@ -131,33 +135,53 @@ class EpiAnalyzer(
         return parsear(texto)
     }
 
-    internal fun parsear(textoJson: String): ResultadoIa {
-        val limpio = textoJson.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
-        val r = try {
-            gson.fromJson(limpio, ResultadoIa::class.java)
-        } catch (e: Exception) {
-            throw ErrorAnalisis("No se pudo interpretar la respuesta de Gemini.")
-        } ?: throw ErrorAnalisis("Respuesta de Gemini sin contenido.")
-        // Gson puede dejar nulos los campos ausentes aunque sean no-nulables en Kotlin
-        @Suppress("USELESS_ELVIS")
-        return ResultadoIa(
-            parteCuerpo = normalizarParte(r.parteCuerpo ?: ""),
-            nombreEpi = (r.nombreEpi ?: "").trim(),
-            marca = (r.marca ?: "").trim(),
-            modelo = (r.modelo ?: "").trim(),
-            normativa = (r.normativa ?: "").trim(),
-            simbolos = (r.simbolos ?: "").trim(),
-            distribuidor = (r.distribuidor ?: "").trim(),
-            observaciones = (r.observaciones ?: "").trim(),
-        )
-    }
+    companion object {
+        private val gson = Gson()
+        private const val MAX_INTENTOS = 3
+        private val CODIGOS_REINTENTABLES = setOf(429, 500, 502, 503, 504)
 
-    private fun normalizarParte(valor: String): String =
-        PARTES_CUERPO.firstOrNull { it.equals(valor.trim(), ignoreCase = true) } ?: ""
+        /** Expuesto internamente para poder probar el aparejo de campos sin llamar a la red. */
+        internal fun parsear(textoJson: String): ResultadoIa {
+            val limpio = textoJson.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+            val r = try {
+                gson.fromJson(limpio, ResultadoIa::class.java)
+            } catch (e: Exception) {
+                throw ErrorAnalisis("No se pudo interpretar la respuesta de Gemini.")
+            } ?: throw ErrorAnalisis("Respuesta de Gemini sin contenido.")
+            // Gson puede dejar nulos los campos ausentes aunque sean no-nulables en Kotlin
+            @Suppress("USELESS_ELVIS")
+            val parte = normalizarParte(r.parteCuerpo ?: "")
+            return ResultadoIa(
+                parteCuerpo = parte,
+                subcategoria = emparejarSubcategoria(parte, r.subcategoria ?: ""),
+                nombreEpi = (r.nombreEpi ?: "").trim(),
+                marca = (r.marca ?: "").trim(),
+                modelo = (r.modelo ?: "").trim(),
+                normativa = (r.normativa ?: "").trim(),
+                simbolos = (r.simbolos ?: "").trim(),
+                fichaTecnica = (r.fichaTecnica ?: "").trim(),
+                distribuidor = (r.distribuidor ?: "").trim(),
+                observaciones = (r.observaciones ?: "").trim(),
+            )
+        }
 
-    private companion object {
-        const val MAX_INTENTOS = 3
-        val CODIGOS_REINTENTABLES = setOf(429, 500, 502, 503, 504)
+        private fun normalizarParte(valor: String): String =
+            PARTES_CUERPO.firstOrNull { it.equals(valor.trim(), ignoreCase = true) } ?: ""
+
+        /**
+         * La subcategoría es una lista cerrada (para que el filtrado quede limpio), así que aquí solo
+         * se acepta si coincide con una opción real de esa zona. Si Gemini escribe algo parecido pero no
+         * exacto, o la zona no se reconoció, se deja vacía para que el técnico la elija en la hoja de edición.
+         */
+        private fun emparejarSubcategoria(zona: String, propuesta: String): String {
+            if (zona.isEmpty() || propuesta.isBlank()) return ""
+            val normalizada = normalizar(propuesta)
+            return subcategoriasDe(zona).firstOrNull { normalizar(it) == normalizada } ?: ""
+        }
+
+        /** "- Cabeza: Casco de protección industrial | Casco de montaña…", una línea por zona, para el prompt. */
+        private fun listaSubcategoriasTexto(): String =
+            com.episcan.app.data.SUBCATEGORIAS.entries.joinToString("\n") { (zona, subs) -> "   - $zona: " + subs.joinToString(" | ") }
 
         val INSTRUCCIONES = """
 Eres un técnico superior en Prevención de Riesgos Laborales experto en la normativa de Equipos de Protección Individual (Reglamento UE 2016/425 y normas EN/ISO armonizadas).
@@ -167,9 +191,11 @@ REGLAS ESTRICTAS
 1. Lee con rigor lo que está impreso: marcado CE (y nº de organismo notificado si aparece), categoría de riesgo (I, II o III), pictogramas, normas y los dígitos/letras de rendimiento que las acompañan, marca, modelo y código comercial.
 2. NO inventes nada. Si un dato no es legible o no aparece en las fotos, devuelve cadena vacía (o "No legible" dentro de 'simbolos' si un código concreto no se distingue). Es preferible un campo vacío a uno erróneo: un técnico validará la ficha.
 3. 'parteCuerpo' debe ser exactamente uno de los valores permitidos por el esquema.
-4. 'nombreEpi' es la denominación técnica oficial (p. ej. "Guantes de protección contra riesgos mecánicos", "Calzado de seguridad", "Gafas de protección ocular", "Casco de protección para la industria", "Semimáscara filtrante contra partículas").
-5. 'normativa' lista las normas con su año si consta (p. ej. "EN 388:2016+A1:2018 · EN ISO 21420:2020 · CE Cat. II"), separadas por " · ".
-6. 'simbolos' es la parte más importante: explica CADA pictograma, letra y dígito presente y su significado concreto PARA ESTE EQUIPO, en frases cortas separadas por saltos de línea. Ejemplos de desglose:
+4. 'subcategoria' debe ser exactamente una de estas opciones, según la 'parteCuerpo' elegida (cópiala tal cual, sin cambiar ni una palabra; si ninguna encaja bien, usa "Otra / no clasificada"):
+${listaSubcategoriasTexto()}
+5. 'nombreEpi' es la denominación técnica oficial (p. ej. "Guantes de protección contra riesgos mecánicos", "Calzado de seguridad", "Gafas de protección ocular", "Casco de protección para la industria", "Semimáscara filtrante contra partículas").
+6. 'normativa' lista las normas con su año si consta (p. ej. "EN 388:2016+A1:2018 · EN ISO 21420:2020 · CE Cat. II"), separadas por " · ".
+7. 'simbolos' es la parte más importante: explica CADA pictograma, letra y dígito presente y su significado concreto PARA ESTE EQUIPO, en frases cortas separadas por saltos de línea. Ejemplos de desglose:
    - EN 388 (guantes mecánicos): cuatro dígitos + letra. 1º abrasión (0-4), 2º corte por cuchilla (0-5), 3º desgarro (0-4), 4º punción (0-4); la letra (A-F) es el corte ISO 13997 (TDM) y P indica protección contra impactos. Indica el valor concreto de cada uno, p. ej. "Abrasión nivel 4: resiste 8000 ciclos".
    - EN 407 (calor y llama), EN 511 (frío), EN 374 (químicos: tipos A/B/C y letras de sustancias; virus/bacterias), EN 421 (radiación).
    - EN ISO 20345 / 20347 / 20346 (calzado): categoría SB, S1, S2, S3, S4, S5 y requisitos adicionales (P antiperforación, E absorción de energía en talón, A antiestático, WR resistencia al agua, HRO calor de contacto, CI aislamiento del frío, SRA/SRB/SRC antideslizamiento, AN protección de tobillo, M metatarso, WRU/FO). Indica también el marcado de la puntera (200 J).
@@ -181,9 +207,10 @@ REGLAS ESTRICTAS
    - EN ISO 20471 (alta visibilidad: clase 1/2/3), EN ISO 11612, EN ISO 11611, EN 1149-5, EN 13034 / EN 14605 (ropa contra químicos, tipos 3-6), EN 343 (lluvia).
    - Otros pictogramas: libro abierto con "i" = leer el manual de instrucciones, fecha de caducidad, talla, temperatura de almacenamiento, etc.
    Si el equipo no tiene un pictograma o norma de los anteriores, describe los que sí tenga.
-7. 'distribuidor': solo si el distribuidor o importador consta en el etiquetado. Si no consta, cadena vacía. No lo deduzcas.
-8. 'observaciones': colores, talla, material visible, versión, y cualquier advertencia (caducidad, uso limitado, marcado poco legible).
-9. Escribe todo en español, con texto plano (sin Markdown).
+8. 'fichaTecnica' es solo el código, referencia o URL corta de la ficha técnica del fabricante, cuando esté impreso, en una pegatina o en un código QR legible (p. ej. "FT-204-ES" o "reca.com/ft/204"). NO redactes tú una ficha técnica ni resumas las características: si no hay ningún código o referencia visible, deja el campo vacío.
+9. 'distribuidor': solo si el distribuidor o importador consta en el etiquetado. Si no consta, cadena vacía. No lo deduzcas.
+10. 'observaciones': colores, talla, material visible, versión, y cualquier advertencia (caducidad, uso limitado, marcado poco legible).
+11. Escribe todo en español, con texto plano (sin Markdown).
         """.trimIndent()
     }
 }
