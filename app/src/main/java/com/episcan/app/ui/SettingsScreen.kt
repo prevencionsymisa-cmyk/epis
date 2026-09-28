@@ -13,21 +13,25 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,6 +53,8 @@ fun SettingsScreen(vm: EpiViewModel, snackbar: SnackbarHostState) {
     var modelo by remember { mutableStateOf(ajustes.geminiModel) }
     var urlOta by remember { mutableStateOf(ajustes.otaUrl) }
     var autoOta by remember { mutableStateOf(ajustes.otaAutoComprobar) }
+    val sinSubcategoria by vm.sinSubcategoria.collectAsState()
+    var confirmarClasificar by remember { mutableStateOf(false) }
 
     fun guardar() {
         ajustes.geminiApiKey = clave
@@ -58,6 +64,28 @@ fun SettingsScreen(vm: EpiViewModel, snackbar: SnackbarHostState) {
     }
 
     BackHandler { guardar(); vm.pantalla = Pantalla.Inicio }
+
+    if (confirmarClasificar) {
+        AlertDialog(
+            onDismissRequest = { confirmarClasificar = false },
+            title = { Text("¿Clasificar las fichas?") },
+            text = {
+                Text(
+                    "Se asignará la subcategoría a las $sinSubcategoria fichas que no la tienen, leyendo su nombre y su norma. " +
+                        "No se modifica ninguna que ya la tenga, y después puedes corregir cualquiera desde su ficha.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { confirmarClasificar = false; vm.clasificarSubcategorias() },
+                    modifier = Modifier.height(48.dp),
+                ) { Text("Clasificar", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmarClasificar = false }, modifier = Modifier.height(48.dp)) { Text("Cancelar") }
+            },
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -103,6 +131,21 @@ fun SettingsScreen(vm: EpiViewModel, snackbar: SnackbarHostState) {
                 modifier = Modifier.fillMaxWidth(),
                 supportingText = { Text("Por ejemplo gemini-2.5-flash o gemini-1.5-flash") },
             )
+
+            Text("Catálogo", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
+            Text(
+                "Asigna la subcategoría a las fichas que aún no la tienen, según su nombre y su normativa. " +
+                    "No cambia las que ya la tienen y deja vacías las que no reconoce.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(
+                onClick = { confirmarClasificar = true },
+                enabled = sinSubcategoria > 0,
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+            ) {
+                Text(if (sinSubcategoria > 0) "Clasificar fichas sin subcategoría ($sinSubcategoria)" else "Todas las fichas tienen subcategoría")
+            }
 
             Text("Actualizaciones (OTA)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
             OutlinedTextField(

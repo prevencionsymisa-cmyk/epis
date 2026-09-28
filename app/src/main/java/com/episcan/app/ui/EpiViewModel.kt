@@ -9,6 +9,8 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.episcan.app.EpiApp
+import com.episcan.app.data.ClasificadorSubcategoria
+import com.episcan.app.data.FormatoSimbolos
 import com.episcan.app.data.PARTES_CUERPO
 import com.episcan.app.data.ResultadoIa
 import com.episcan.app.data.subcategoriasDe
@@ -121,6 +123,36 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
 
     val total: StateFlow<Int> = repo.observarTodos().map { it.size }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    /** Fichas que todavía no tienen subcategoría. */
+    val sinSubcategoria: StateFlow<Int> = repo.observarTodos().map { lista -> lista.count { it.subcategoria.isBlank() } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    /**
+     * Asigna subcategoría a las fichas que no la tienen, según su nombre y su normativa. No toca las que
+     * ya la tienen ni inventa: las que no reconoce se quedan vacías para clasificarlas a mano.
+     */
+    fun clasificarSubcategorias() {
+        viewModelScope.launch {
+            val pendientes = repo.obtenerTodos().filter { it.subcategoria.isBlank() }
+            if (pendientes.isEmpty()) {
+                mensaje("Todas las fichas ya tienen subcategoría")
+                return@launch
+            }
+            var asignadas = 0
+            pendientes.forEach { e ->
+                ClasificadorSubcategoria.clasificar(e.parteCuerpo, e.nombreEpi, e.normativa)?.let { sub ->
+                    repo.guardar(e.copy(subcategoria = sub))
+                    asignadas++
+                }
+            }
+            val sinResolver = pendientes.size - asignadas
+            mensaje(
+                if (sinResolver == 0) "Subcategoría asignada a las $asignadas fichas"
+                else "Asignada a $asignadas de ${pendientes.size} fichas. Las otras $sinResolver puedes clasificarlas a mano",
+            )
+        }
+    }
 
     private val _mensajes = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val mensajes: SharedFlow<String> = _mensajes.asSharedFlow()
@@ -332,7 +364,9 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
         val filas = lista.map { e ->
             FilaExcel(
                 parteCuerpo = e.parteCuerpo, subcategoria = e.subcategoria, nombreEpi = e.nombreEpi, observaciones = e.observaciones,
-                marca = e.marca, modelo = e.modelo, normativa = e.normativa, simbolos = e.simbolos,
+                marca = e.marca, modelo = e.modelo, normativa = e.normativa,
+                // Misma estructura que en pantalla: una norma por bloque y una línea por concepto
+                simbolos = FormatoSimbolos.aTextoPlano(FormatoSimbolos.parsear(e.simbolos)),
                 fichaTecnica = e.fichaTecnica, distribuidor = e.distribuidor,
                 miniatura = e.listaFotos().firstOrNull()?.let { ImageUtils.miniatura(File(it)) },
             )

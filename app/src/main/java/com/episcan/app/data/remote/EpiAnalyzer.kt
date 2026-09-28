@@ -104,7 +104,7 @@ class EpiAnalyzer(
                 add("marca", texto("Marca o fabricante visible; cadena vacía si no se ve"))
                 add("modelo", texto("Referencia o modelo serigrafiado; cadena vacía si no se ve"))
                 add("normativa", texto("Normas EN/ISO y marcado CE detectados, separados por ' · '"))
-                add("simbolos", texto("Explicación técnica detallada de cada pictograma y código"))
+                add("simbolos", texto("Un bloque por norma o marcado: título en la primera línea y una línea '- Concepto: significado' por concepto; bloques separados por una línea en blanco"))
                 add("fichaTecnica", texto("Código o referencia de la ficha técnica del fabricante si aparece impreso o en un QR/URL; cadena vacía si no consta"))
                 add("distribuidor", texto("Distribuidor/importador solo si consta en el etiquetado; si no, cadena vacía"))
                 add("observaciones", texto("Colores, talla, acabado y notas relevantes"))
@@ -195,7 +195,31 @@ REGLAS ESTRICTAS
 ${listaSubcategoriasTexto()}
 5. 'nombreEpi' es la denominación técnica oficial (p. ej. "Guantes de protección contra riesgos mecánicos", "Calzado de seguridad", "Gafas de protección ocular", "Casco de protección para la industria", "Semimáscara filtrante contra partículas").
 6. 'normativa' lista las normas con su año si consta (p. ej. "EN 388:2016+A1:2018 · EN ISO 21420:2020 · CE Cat. II"), separadas por " · ".
-7. 'simbolos' es la parte más importante: explica CADA pictograma, letra y dígito presente y su significado concreto PARA ESTE EQUIPO, en frases cortas separadas por saltos de línea. Ejemplos de desglose:
+7. 'simbolos' es la parte más importante: explica CADA pictograma, letra y dígito presente y su significado concreto PARA ESTE EQUIPO.
+   FORMATO OBLIGATORIO (texto plano, con saltos de línea reales):
+   - Un bloque por cada norma o marcado: cada norma EN/ISO, el marcado CE y cada pictograma (p. ej. el libro abierto con "i").
+   - La PRIMERA línea del bloque es el título: la norma con su año y su código de prestaciones, sin dos puntos al final. Ejemplo: EN 388:2016+A1:2018 (3110X)
+   - Debajo, UNA línea por concepto, cada una empezando por "- " y con la forma "Concepto: significado". Ejemplo: - Abrasión: nivel 3 (2000 ciclos)
+   - Separa un bloque de otro con una línea en blanco.
+   - Nunca juntes varios conceptos en la misma línea ni escribas párrafos largos.
+   Ejemplo completo de salida:
+   EN 388:2016+A1:2018 (3110X)
+   - Abrasión: nivel 3
+   - Corte por cuchilla (Coup): nivel 1
+   - Desgarro: nivel 1
+   - Punción: nivel 0
+   - Corte TDM (ISO 13997): X, no ensayado
+
+   EN ISO 374-1:2016+A1:2018 Tipo A (AKLMNPST)
+   - A: metanol
+   - K: hidróxido de sodio 40 %
+
+   Marcado CE 0598 Cat. III
+   - Riesgos mortales o irreversibles: certificado por el organismo notificado 0598
+
+   Pictograma de manual
+   - Libro abierto con "i": leer las instrucciones del fabricante antes de usar
+   Referencia de significados para redactar los conceptos de cada norma:
    - EN 388 (guantes mecánicos): cuatro dígitos + letra. 1º abrasión (0-4), 2º corte por cuchilla (0-5), 3º desgarro (0-4), 4º punción (0-4); la letra (A-F) es el corte ISO 13997 (TDM) y P indica protección contra impactos. Indica el valor concreto de cada uno, p. ej. "Abrasión nivel 4: resiste 8000 ciclos".
    - EN 407 (calor y llama), EN 511 (frío), EN 374 (químicos: tipos A/B/C y letras de sustancias; virus/bacterias), EN 421 (radiación).
    - EN ISO 20345 / 20347 / 20346 (calzado): categoría SB, S1, S2, S3, S4, S5 y requisitos adicionales (P antiperforación, E absorción de energía en talón, A antiestático, WR resistencia al agua, HRO calor de contacto, CI aislamiento del frío, SRA/SRB/SRC antideslizamiento, AN protección de tobillo, M metatarso, WRU/FO). Indica también el marcado de la puntera (200 J).

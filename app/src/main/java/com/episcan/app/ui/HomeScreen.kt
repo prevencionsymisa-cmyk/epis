@@ -44,6 +44,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -69,12 +70,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import com.episcan.app.data.FormatoSimbolos
 import com.episcan.app.data.local.EpiEntity
 import java.io.File
 
@@ -378,7 +384,8 @@ private fun DetalleSheet(
                     .padding(12.dp),
             ) {
                 Text("Símbolos y significado", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold)
-                Text(epi.simbolos.ifBlank { "—" }, style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(6.dp))
+                SimbologiaVista(epi.simbolos)
             }
 
             Dato("Ficha técnica", epi.fichaTecnica, Modifier.fillMaxWidth())
@@ -412,6 +419,48 @@ private fun DetalleSheet(
                 }
             }
         }
+    }
+}
+
+/**
+ * Simbología ordenada: cada norma o marcado es un bloque con su título en negrita y, debajo,
+ * una viñeta por concepto. Así se ve de un vistazo qué símbolos tiene el EPI y qué significa cada uno.
+ */
+@Composable
+private fun SimbologiaVista(texto: String) {
+    val bloques = remember(texto) { FormatoSimbolos.parsear(texto) }
+    if (bloques.isEmpty()) {
+        Text("—", style = MaterialTheme.typography.bodyMedium)
+        return
+    }
+    val acento = MaterialTheme.colorScheme.tertiary
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        bloques.forEachIndexed { i, bloque ->
+            if (i > 0) HorizontalDivider(color = acento.copy(alpha = 0.25f))
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                bloque.titulo?.let {
+                    Text(it, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = acento)
+                }
+                bloque.texto?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                bloque.puntos.forEach { punto ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(start = 4.dp)) {
+                        Text("•", color = acento, fontWeight = FontWeight.Bold)
+                        Text(conEtiquetaEnNegrita(punto), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** "Abrasión: nivel 3" → la parte anterior a los dos puntos en negrita. */
+private fun conEtiquetaEnNegrita(punto: String): AnnotatedString = buildAnnotatedString {
+    val i = punto.indexOf(": ")
+    if (i in 1..45) {
+        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(punto.substring(0, i + 1)) }
+        append(punto.substring(i + 1))
+    } else {
+        append(punto)
     }
 }
 
