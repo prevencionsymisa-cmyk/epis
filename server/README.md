@@ -80,6 +80,8 @@ export const borrarEpi = (uid: string, revision: number) =>
 export const catalogo = () => api<{ subcategorias: Record<string, string[]> }>('/api/catalogo'); // para los desplegables
 
 // Las fotos se leen sin token (sus identificadores no son adivinables): <img src={`${API}/api/fotos/${id}`} />
+// Igual los PDF adjuntos de cada ficha (epi.documentos = [{ id, nombre }]):
+//   <a href={`${API}/api/documentos/${doc.id}?nombre=${encodeURIComponent(doc.nombre)}`} target="_blank">{doc.nombre}</a>
 ```
 
 Reglas para editar bien desde la web:
@@ -87,6 +89,8 @@ Reglas para editar bien desde la web:
   la API responde **409** con la versión actual: enséñasela al usuario en lugar de sobrescribir.
 - `parteCuerpo` y `subcategoria` deben ser valores de `/api/catalogo` (la app los muestra en desplegables).
 - Los borrados son lógicos (`eliminado`): los móviles se enteran en su siguiente sincronización.
+- `documentos` (los PDF de la ficha técnica) es opcional al guardar: si no lo mandas, se conservan los que ya tenía
+  la ficha. Mándalo solo si quieres cambiar la lista (`[]` los quita todos).
 
 ### Alternativa: SQL directo
 Si tu web ya se conecta a Postgres, también puede leer/escribir `epis` directamente (solo si la web está en la misma red
@@ -95,7 +99,7 @@ se convierte en borrado lógico. Para leer usa la vista `epis_activos` y para la
 `catalogo_subcategorias`. Ojo: desde Vercel la base **no** es accesible (red interna), por eso se recomienda la API.
 
 ## 4. Referencia de la API
-Todas las rutas `/api/*` (salvo lectura de fotos) exigen `Authorization: Bearer <token>`.
+Todas las rutas `/api/*` (salvo lectura de fotos y documentos) exigen `Authorization: Bearer <token>`.
 
 | Método y ruta | Uso |
 |---|---|
@@ -108,16 +112,18 @@ Todas las rutas `/api/*` (salvo lectura de fotos) exigen `Authorization: Bearer 
 | `DELETE /api/epis/:uid?baseRevision=N` | Borrado lógico |
 | `GET /api/catalogo` | Zonas y subcategorías válidas |
 | `PUT /api/fotos/:id` (`image/jpeg`) · `GET /api/fotos/:id` | Fotos (la lectura es pública) |
+| `PUT /api/documentos/:id` (`application/pdf`, máx. 20 MB) · `GET /api/documentos/:id?nombre=` | PDF adjuntos, p. ej. la ficha técnica del distribuidor (la lectura es pública) |
 
 ## 5. Desarrollo y pruebas
 ```bash
 cd server
 npm ci
-npm test                       # 26 tests contra Postgres real (PGlite, sin instalar nada)
+npm test                       # 32 tests contra Postgres real (PGlite, sin instalar nada)
 node test/servidor-de-prueba.js   # API en 127.0.0.1:3999 para probar la app Android contra ella
 ```
 `test/catalogo.test.js` comprueba que las subcategorías del servidor coinciden con las de la app
 (`Catalogo.kt`): si cambias unas, cambia las otras.
 
-Copias de seguridad, límites de tamaño y monitorización quedan en manos de Coolify. Las fotos se guardan en la propia base
-de datos (`epi_fotos`), así que una copia de Postgres las incluye.
+Copias de seguridad, límites de tamaño y monitorización quedan en manos de Coolify. Las fotos y los PDF se guardan en la propia
+base de datos (`epi_fotos` y `epi_documentos`), así que una copia de Postgres los incluye. Ojo con el tamaño: cada PDF
+puede ocupar varios MB.

@@ -32,10 +32,11 @@ class AppContainer(app: Application) {
         .build()
         .create(GeminiApi::class.java)
 
-    val repositorio = EpiRepository(AppDatabase.crear(app).epiDao())
+    private val carpetaDocumentos = File(app.filesDir, "documentos")
+    val repositorio = EpiRepository(AppDatabase.crear(app).epiDao(), carpetaDocumentos)
     val analizador = EpiAnalyzer(geminiApi, ajustes)
     val ota = OtaUpdateManager(app, http)
-    val sync = SyncManager(http, repositorio, FotosLocales(File(app.filesDir, "fotos")), ajustes)
+    val sync = SyncManager(http, repositorio, FotosLocales(File(app.filesDir, "fotos")), FotosLocales(carpetaDocumentos), ajustes)
 }
 
 class EpiApp : Application() {

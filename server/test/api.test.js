@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
-import { JPEG, TOKEN_WEB, crearEntorno, ficha } from './helpers.js';
+import { JPEG, PDF, TOKEN_WEB, crearEntorno, ficha } from './helpers.js';
 
 let env;
 before(async () => {
@@ -283,5 +283,69 @@ describe('fotos', () => {
     const f = ficha({ fotos: [id, 'epi_segunda-foto-123456.jpg'] });
     const r = (await push([f])).json().resultados[0];
     assert.deepEqual(r.item.fotos, [id, 'epi_segunda-foto-123456.jpg']);
+  });
+});
+
+describe('documentos PDF', () => {
+  const id = 'doc_0f8e4c2a-1111-4222-8333-444455556666.pdf';
+  const doc = { id, nombre: 'Ficha técnica RECA.pdf' };
+
+  it('subir exige token y un PDF de verdad', async () => {
+    assert.equal((await env.llamar('PUT', `/api/documentos/${id}`, { token: null, cuerpo: PDF, tipo: 'application/pdf' })).statusCode, 401);
+    const noEsPdf = await env.llamar('PUT', `/api/documentos/${id}`, { cuerpo: Buffer.from('<html>no soy un pdf</html>'), tipo: 'application/pdf' });
+    assert.equal(noEsPdf.statusCode, 400);
+    const jpeg = await env.llamar('PUT', `/api/documentos/${id}`, { cuerpo: JPEG, tipo: 'image/jpeg' });
+    assert.equal(jpeg.statusCode, 400);
+  });
+
+  it('se sube una vez (201), se repite sin error (200) y se lee sin token', async () => {
+    assert.equal((await env.llamar('PUT', `/api/documentos/${id}`, { cuerpo: PDF, tipo: 'application/pdf' })).statusCode, 201);
+    assert.equal((await env.llamar('PUT', `/api/documentos/${id}`, { cuerpo: PDF, tipo: 'application/pdf' })).statusCode, 200);
+
+    const lectura = await env.llamar('GET', `/api/documentos/${id}?nombre=${encodeURIComponent('Ficha técnica RECA.pdf')}`, { token: null });
+    assert.equal(lectura.statusCode, 200);
+    assert.equal(lectura.headers['content-type'], 'application/pdf');
+    assert.match(lectura.headers['content-disposition'], /^inline; filename="Ficha tecnica RECA\.pdf"; filename\*=UTF-8''Ficha%20t%C3%A9cnica%20RECA\.pdf$/);
+    assert.deepEqual(Buffer.from(lectura.rawPayload), PDF);
+
+    assert.equal((await env.llamar('HEAD', `/api/documentos/${id}`, { token: null })).statusCode, 200);
+    assert.equal((await env.llamar('HEAD', '/api/documentos/doc_no-existe-000000.pdf', { token: null })).statusCode, 404);
+  });
+
+  it('una ficha guarda sus documentos con el nombre y los devuelve en el pull', async () => {
+    const f = ficha({ documentos: [doc] });
+    const r = (await push([f])).json().resultados[0];
+    assert.deepEqual(r.item.documentos, [doc]);
+    const p = (await pull(r.item.revision - 1)).json();
+    assert.deepEqual(p.items.find((i) => i.uid === f.uid).documentos, [doc]);
+  });
+
+  it('un cliente que no manda "documentos" (app antigua o web) no los borra', async () => {
+    const f = ficha({ documentos: [doc] });
+    const rev = (await push([f])).json().resultados[0].item.revision;
+    const { documentos: _, ...sinDocumentos } = f;
+
+    const web = await env.llamar('PUT', `/api/epis/${f.uid}`, { token: TOKEN_WEB, json: { ...sinDocumentos, baseRevision: rev, marca: 'Otra' } });
+    assert.equal(web.statusCode, 200);
+    assert.deepEqual(web.json().documentos, [doc]);
+
+    // Reintento de un móvil antiguo con los mismos datos: no cuenta como cambio
+    const r = (await push([{ ...sinDocumentos, marca: 'Otra', baseRevision: 0 }])).json().resultados[0];
+    assert.equal(r.estado, 'ok');
+    assert.deepEqual(r.item.documentos, [doc]);
+  });
+
+  it('quitar un documento (lista vacía) sí se guarda', async () => {
+    const f = ficha({ documentos: [doc] });
+    const rev = (await push([f])).json().resultados[0].item.revision;
+    const r = (await push([{ ...f, baseRevision: rev, documentos: [] }])).json().resultados[0];
+    assert.equal(r.estado, 'ok');
+    assert.deepEqual(r.item.documentos, []);
+  });
+
+  it('identificadores o nombres no válidos se rechazan', async () => {
+    assert.equal((await push([ficha({ documentos: [{ id: '../../etc/passwd', nombre: 'x.pdf' }] })])).statusCode, 400);
+    assert.equal((await push([ficha({ documentos: [{ id, nombre: '' }] })])).statusCode, 400);
+    assert.equal((await push([ficha({ documentos: [id] })])).statusCode, 400);
   });
 });

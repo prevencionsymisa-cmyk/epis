@@ -72,3 +72,6 @@ export function ficha(extra = {}) {
 
 // JPEG mínimo válido en cuanto a cabecera (FF D8 FF) para las pruebas de fotos
 export const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0xff, 0xd9]);
+
+// PDF mínimo en cuanto a cabecera (%PDF-) para las pruebas de documentos
+export const PDF = Buffer.from('%PDF-1.4\n1 0 obj << >> endobj\ntrailer << >>\n%%EOF\n', 'latin1');

@@ -16,6 +16,9 @@ const CAMPOS_TEXTO = {
 
 const aMs = (fecha) => (fecha instanceof Date ? fecha.getTime() : new Date(fecha).getTime());
 
+/** Deja cada documento solo con { id, nombre } y en ese orden de claves, para poder comparar listas. */
+const normalizarDocumentos = (lista) => (lista ?? []).map((d) => ({ id: d.id, nombre: d.nombre }));
+
 /** Fila de la base de datos -> objeto JSON que ven la app y la web. */
 export function filaAItem(fila) {
   const item = {
@@ -23,6 +26,7 @@ export function filaAItem(fila) {
     revision: Number(fila.revision),
     eliminado: fila.eliminado,
     fotos: fila.fotos ?? [],
+    documentos: normalizarDocumentos(fila.documentos),
     creadoEn: aMs(fila.creado_en),
     actualizadoEn: aMs(fila.actualizado_en),
   };
@@ -36,18 +40,28 @@ function mismosDatos(fila, item) {
   const fotosA = JSON.stringify(fila.fotos ?? []);
   const fotosB = JSON.stringify(item.fotos ?? []);
   if (fotosA !== fotosB) return false;
+  if (item.documentos !== undefined) {
+    const docsA = JSON.stringify(normalizarDocumentos(fila.documentos));
+    const docsB = JSON.stringify(normalizarDocumentos(item.documentos));
+    if (docsA !== docsB) return false;
+  }
   return Object.entries(CAMPOS_TEXTO).every(([json, columna]) => (item[json] ?? '') === (fila[columna] ?? ''));
 }
 
-function valores(item) {
+/**
+ * Valores de las columnas en el orden de COLUMNAS. Si el cliente no manda "documentos" (versiones antiguas
+ * de la app o una web que no los gestiona) se conservan los que ya había: así no se borran sin querer.
+ */
+function valores(item, documentosActuales = []) {
   return [
     ...Object.keys(CAMPOS_TEXTO).map((json) => item[json] ?? ''),
     item.fotos ?? [],
+    JSON.stringify(normalizarDocumentos(item.documentos ?? documentosActuales)),
     Boolean(item.eliminado),
   ];
 }
 
-const COLUMNAS = [...Object.values(CAMPOS_TEXTO), 'fotos', 'eliminado'];
+const COLUMNAS = [...Object.values(CAMPOS_TEXTO), 'fotos', 'documentos', 'eliminado'];
 
 /**
  * Crea o actualiza una ficha con control de concurrencia optimista:
@@ -75,7 +89,7 @@ export async function guardarItem(q, item) {
   if (Number(actual.revision) !== (item.baseRevision ?? 0)) return { estado: 'conflicto', item: filaAItem(actual) };
 
   const asignaciones = COLUMNAS.map((c, i) => `${c} = $${i + 2}`).join(', ');
-  const [nueva] = await q(`UPDATE epis SET ${asignaciones} WHERE uid = $1 RETURNING *`, [uid, ...valores(item)]);
+  const [nueva] = await q(`UPDATE epis SET ${asignaciones} WHERE uid = $1 RETURNING *`, [uid, ...valores(item, actual.documentos)]);
   return { estado: 'ok', item: filaAItem(nueva) };
 }
 

@@ -70,6 +70,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -82,6 +83,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.episcan.app.data.FormatoSimbolos
+import com.episcan.app.data.local.DocumentoAdjunto
 import com.episcan.app.data.local.EpiEntity
 import java.io.File
 
@@ -255,6 +257,8 @@ fun HomeScreen(
             onEditar = { detalleId = null; vm.editar(detalle) },
             onEliminar = { detalleId = null; vm.pedirEliminar(detalle) },
             onVerFotos = { fotosAbiertas = detalle.listaFotos() },
+            archivoDocumento = vm::archivoDocumento,
+            onMensaje = vm::mensaje,
         )
     }
 
@@ -262,7 +266,7 @@ fun HomeScreen(
         AlertDialog(
             onDismissRequest = vm::descartarEliminar,
             title = { Text("¿Eliminar este EPI?") },
-            text = { Text("Se borrará «${epi.nombreEpi}» y sus fotos del catálogo. Esta acción no se puede deshacer.") },
+            text = { Text("Se borrará «${epi.nombreEpi}» con sus fotos y documentos del catálogo. Esta acción no se puede deshacer.") },
             confirmButton = {
                 TextButton(onClick = vm::confirmarEliminar, modifier = Modifier.height(48.dp)) {
                     Text("Eliminar", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
@@ -353,8 +357,11 @@ private fun DetalleSheet(
     onEditar: () -> Unit,
     onEliminar: () -> Unit,
     onVerFotos: () -> Unit,
+    archivoDocumento: (DocumentoAdjunto) -> File,
+    onMensaje: (String) -> Unit,
 ) {
     val estado = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val contexto = LocalContext.current
     ModalBottomSheet(onDismissRequest = onCerrar, sheetState = estado) {
         Column(
             Modifier
@@ -395,7 +402,19 @@ private fun DetalleSheet(
                 SimbologiaVista(epi.simbolos)
             }
 
-            Dato("Ficha técnica", epi.fichaTecnica, Modifier.fillMaxWidth())
+            // Ficha técnica: la referencia y, debajo, los PDF adjuntos
+            val documentos = epi.listaDocumentos()
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Dato("Ficha técnica", epi.fichaTecnica.ifBlank { if (documentos.isEmpty()) "" else "Ver documentos adjuntos" })
+                documentos.forEach { doc ->
+                    val archivo = archivoDocumento(doc)
+                    FilaDocumento(
+                        doc = doc,
+                        descargado = archivo.isFile,
+                        onAbrir = { abrirPdf(contexto, archivo)?.let(onMensaje) },
+                    )
+                }
+            }
             Dato("Distribuidor", epi.distribuidor, Modifier.fillMaxWidth())
 
             val fotos = epi.listaFotos()

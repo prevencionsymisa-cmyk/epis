@@ -26,6 +26,7 @@ import com.episcan.app.ui.EpiTheme
 import com.episcan.app.ui.EpiViewModel
 import com.episcan.app.ui.HomeScreen
 import com.episcan.app.ui.OtaDialog
+import com.episcan.app.ui.abrirPdf
 import com.episcan.app.ui.Pantalla
 import com.episcan.app.ui.SettingsScreen
 import com.google.android.play.core.appupdate.AppUpdateManagerFactory
@@ -107,6 +108,12 @@ class MainActivity : ComponentActivity() {
                 onGuardar = vm::guardar,
                 onFusionar = vm::fusionarEnExistente,
                 onCancelar = vm::cancelarEditor,
+                documentos = vm.documentosEditor,
+                adjuntandoDocumento = vm.adjuntandoDocumento,
+                documentoDescargado = { doc -> vm.archivoDocumento(doc).isFile },
+                onAdjuntarDocumento = vm::adjuntarDocumento,
+                onQuitarDocumento = vm::quitarDocumento,
+                onAbrirDocumento = { doc -> abrirPdf(this, vm.archivoDocumento(doc))?.let(vm::mensaje) },
             )
         }
         vm.ota?.let {

@@ -25,23 +25,51 @@ const esquemaItem = {
     distribuidor: { type: 'string', maxLength: 300 },
     observaciones: { type: 'string', maxLength: 5000 },
     fotos: { type: 'array', maxItems: 12, items: { type: 'string', pattern: ID_FOTO } },
+    // PDFs adjuntos (ficha técnica del distribuidor…). Opcional: si falta se conservan los que ya hubiera.
+    documentos: {
+      type: 'array',
+      maxItems: 10,
+      items: {
+        type: 'object',
+        required: ['id', 'nombre'],
+        properties: {
+          id: { type: 'string', pattern: ID_FOTO },
+          nombre: { type: 'string', minLength: 1, maxLength: 200 },
+        },
+      },
+    },
     creadoEn: { type: 'integer', minimum: 0 },
   },
 };
 
 const hash = (s) => createHash('sha256').update(s).digest();
 
+/** Cabecera para abrir el PDF en el navegador con un nombre legible (versión ASCII + versión UTF-8). */
+function disposicionInline(nombre) {
+  const conExtension = /\.pdf$/i.test(nombre) ? nombre : `${nombre}.pdf`;
+  const ascii = conExtension.normalize('NFD').replace(/[^\x20-\x7e]/g, '').replace(/["\\]/g, '_') || 'documento.pdf';
+  return `inline; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(conExtension)}`;
+}
+
 /**
  * @param db        interfaz de src/db.js
  * @param tokens    tokens válidos (uno por cliente: móvil, web…; se pueden revocar quitándolos)
  * @param corsOrigin origen permitido para llamadas desde un navegador (opcional; lo normal es llamar desde el servidor de la web)
  */
-export function crearApp({ db, tokens, corsOrigin = '', fotosMaxBytes = 5 * 1024 * 1024, logger = false }) {
+export function crearApp({
+  db,
+  tokens,
+  corsOrigin = '',
+  fotosMaxBytes = 5 * 1024 * 1024,
+  documentosMaxBytes = 20 * 1024 * 1024,
+  logger = false,
+}) {
   const app = Fastify({ logger, bodyLimit: 2 * 1024 * 1024 });
   const huellasTokens = tokens.map(hash);
 
-  // Las fotos llegan como cuerpo binario image/jpeg
+  // Las fotos llegan como cuerpo binario image/jpeg y los documentos como application/pdf
   app.addContentTypeParser('image/jpeg', { parseAs: 'buffer', bodyLimit: fotosMaxBytes }, (_req, cuerpo, hecho) => hecho(null, cuerpo));
+  app.addContentTypeParser('application/pdf', { parseAs: 'buffer', bodyLimit: documentosMaxBytes }, (_req, cuerpo, hecho) => hecho(null, cuerpo));
 
   // ---- CORS opcional -------------------------------------------------------------------
   if (corsOrigin) {
@@ -55,11 +83,11 @@ export function crearApp({ db, tokens, corsOrigin = '', fotosMaxBytes = 5 * 1024
   }
 
   // ---- Autenticación por token (Bearer) -------------------------------------------------
-  // Públicos: /health y la lectura de fotos (sus identificadores son aleatorios y no adivinables).
+  // Públicos: /health y la lectura de fotos y documentos (sus identificadores son aleatorios y no adivinables).
   const esPublica = (req) => {
     const ruta = req.url.split('?')[0];
     if (ruta === '/health') return true;
-    return (req.method === 'GET' || req.method === 'HEAD') && ruta.startsWith('/api/fotos/');
+    return (req.method === 'GET' || req.method === 'HEAD') && (ruta.startsWith('/api/fotos/') || ruta.startsWith('/api/documentos/'));
   };
   app.addHook('onRequest', async (req, reply) => {
     if (req.method === 'OPTIONS' || esPublica(req)) return;
@@ -210,6 +238,42 @@ export function crearApp({ db, tokens, corsOrigin = '', fotosMaxBytes = 5 * 1024
       .header('Cache-Control', 'public, max-age=31536000, immutable')
       .send(Buffer.from(foto.contenido));
   });
+
+  // ---- Documentos PDF --------------------------------------------------------------------
+  const paramsDocumento = paramsFoto;
+
+  app.put('/api/documentos/:id', { schema: { params: paramsDocumento } }, async (req, reply) => {
+    const cuerpo = req.body;
+    const esPdf = Buffer.isBuffer(cuerpo) && cuerpo.length > 5 && cuerpo.subarray(0, 5).toString('latin1') === '%PDF-';
+    if (!esPdf) return reply.code(400).send({ error: 'Solo se aceptan documentos PDF (Content-Type: application/pdf)' });
+    // Como las fotos, un documento no cambia nunca: si ya existe, no se sobrescribe
+    const insertados = await db.query('INSERT INTO epi_documentos (id, contenido) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING RETURNING id', [
+      req.params.id,
+      cuerpo,
+    ]);
+    return reply.code(insertados.length > 0 ? 201 : 200).send({ id: req.params.id });
+  });
+
+  // ?nombre=Ficha.pdf solo cambia el nombre con el que lo guarda el navegador
+  app.get(
+    '/api/documentos/:id',
+    {
+      schema: {
+        params: paramsDocumento,
+        querystring: { type: 'object', properties: { nombre: { type: 'string', maxLength: 200 } } },
+      },
+    },
+    async (req, reply) => {
+      const [doc] = await db.query('SELECT contenido FROM epi_documentos WHERE id = $1', [req.params.id]);
+      if (!doc) return reply.code(404).send({ error: 'No existe' });
+      return reply
+        .header('Content-Type', 'application/pdf')
+        .header('Content-Disposition', disposicionInline(req.query.nombre || req.params.id))
+        .header('X-Content-Type-Options', 'nosniff')
+        .header('Cache-Control', 'public, max-age=31536000, immutable')
+        .send(Buffer.from(doc.contenido));
+    },
+  );
 
   // ---- Errores: nunca se filtran detalles internos ---------------------------------------
   app.setErrorHandler((error, req, reply) => {

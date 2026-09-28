@@ -1,5 +1,6 @@
 package com.episcan.app
 
+import com.episcan.app.data.local.DocumentoAdjunto
 import com.episcan.app.data.local.EpiEntity
 import com.episcan.app.sync.AlmacenFotos
 import com.episcan.app.sync.AlmacenSync
@@ -78,6 +79,7 @@ class SyncManagerTest {
 
     private val almacen = AlmacenFalso()
     private val fotos = FotosFalsas()
+    private val documentos = FotosFalsas()
     private lateinit var config: ConfigFalsa
     private lateinit var sync: SyncManager
 
@@ -94,7 +96,7 @@ class SyncManagerTest {
         servidor.start()
         config = ConfigFalsa(servidor.url("/").toString().trimEnd('/'))
         config.servidorSincronizado = config.url // como si ya se hubiera sincronizado antes con este servidor
-        sync = SyncManager(OkHttpClient(), almacen, fotos, config, permitirHttp = true)
+        sync = SyncManager(OkHttpClient(), almacen, fotos, documentos, config, permitirHttp = true)
     }
 
     @After
@@ -351,6 +353,92 @@ class SyncManagerTest {
         assertTrue(peticiones.none { it.ruta.startsWith("/api/fotos/") })
     }
 
+    // ---------------------------------------------------------------- documentos PDF
+
+    private val doc = DocumentoAdjunto(id = "doc_1.pdf", nombre = "Ficha técnica.pdf")
+    private val pdf = "%PDF-1.4".toByteArray()
+
+    @Test
+    fun enviaLosPdfComoApplicationPdfYLaFichaLlevaIdYNombre() {
+        documentos.archivos[doc.id] = pdf
+        almacen.agregar(
+            EpiEntity(uid = "uid-1", parteCuerpo = "Manos y Brazos", nombreEpi = "Guantes", documentos = EpiEntity.documentosAJson(listOf(doc))),
+        )
+        manejador = { p ->
+            when (p.metodo) {
+                "HEAD" -> MockResponse().setResponseCode(404)
+                "PUT" -> MockResponse().setResponseCode(201)
+                "POST" -> resultadoPush(Triple("uid-1", "ok", dtoServidor("uid-1", 3)))
+                else -> pull(revision = 3)
+            }
+        }
+        assertTrue(sincronizar().correcta)
+
+        val put = peticiones.single { it.metodo == "PUT" }
+        assertEquals("/api/documentos/doc_1.pdf", put.ruta)
+        assertArrayEquals(pdf, put.cuerpo)
+        assertEquals("/api/documentos/doc_1.pdf", peticiones.single { it.metodo == "HEAD" }.ruta)
+
+        val item = cuerpoJson(peticiones.single { it.metodo == "POST" }).getAsJsonArray("items")[0].asJsonObject
+        val enviado = item.getAsJsonArray("documentos")[0].asJsonObject
+        assertEquals("doc_1.pdf", enviado["id"].asString)
+        assertEquals("Ficha técnica.pdf", enviado["nombre"].asString)
+    }
+
+    @Test
+    fun descargaLosPdfQueFaltanYBorraLosQueSeQuitaronEnOtroSitio() {
+        val viejo = DocumentoAdjunto(id = "doc_viejo.pdf", nombre = "Antigua.pdf")
+        documentos.archivos[viejo.id] = pdf
+        almacen.agregar(
+            EpiEntity(uid = "uid-1", parteCuerpo = "Manos y Brazos", nombreEpi = "Guantes", revision = 2, pendiente = false,
+                documentos = EpiEntity.documentosAJson(listOf(viejo))),
+        )
+        manejador = { p ->
+            when {
+                p.ruta == "/api/documentos/doc_1.pdf" -> MockResponse().setBody(okio.Buffer().write(pdf))
+                else -> pull(items = listOf(dtoServidor("uid-1", 5).copy(documentos = listOf(doc))), revision = 5)
+            }
+        }
+        assertTrue(sincronizar().correcta)
+
+        assertEquals(listOf(doc), almacen.ficha("uid-1")!!.listaDocumentos())
+        assertArrayEquals(pdf, documentos.archivos[doc.id])
+        assertFalse("el PDF que ya no está en la ficha se borra", documentos.existe(viejo.id))
+    }
+
+    @Test
+    fun unBorradoEnElServidorBorraTambienSusPdf() {
+        documentos.archivos[doc.id] = pdf
+        almacen.agregar(
+            EpiEntity(uid = "uid-1", parteCuerpo = "Manos y Brazos", nombreEpi = "Guantes", revision = 2, pendiente = false,
+                documentos = EpiEntity.documentosAJson(listOf(doc))),
+        )
+        manejador = { pull(items = listOf(dtoServidor("uid-1", 8, eliminado = true)), revision = 8) }
+        sincronizar()
+        assertNull(almacen.ficha("uid-1"))
+        assertFalse(documentos.existe(doc.id))
+    }
+
+    @Test
+    fun unServidorSinDocumentosONullDejaLaFichaSinPdf() {
+        manejador = {
+            MockResponse().setBody(
+                """{"items":[{"uid":"a","revision":1,"parteCuerpo":"Cabeza","nombreEpi":"Casco","documentos":null},""" +
+                    """{"uid":"b","revision":2,"parteCuerpo":"Cabeza","nombreEpi":"Gafas"}],"revision":2,"hayMas":false}""",
+            )
+        }
+        assertTrue(sincronizar().correcta)
+        assertEquals(emptyList<DocumentoAdjunto>(), almacen.ficha("a")!!.listaDocumentos())
+        assertEquals(emptyList<DocumentoAdjunto>(), almacen.ficha("b")!!.listaDocumentos())
+    }
+
+    @Test
+    fun unJsonDeDocumentosDanadoNoRompeNada() {
+        val e = EpiEntity(parteCuerpo = "Cabeza", nombreEpi = "Casco", documentos = "{esto no es json")
+        assertEquals(emptyList<DocumentoAdjunto>(), e.listaDocumentos())
+        assertEquals("", EpiEntity.documentosAJson(emptyList()))
+    }
+
     // ---------------------------------------------------------------- errores y configuración
 
     @Test
@@ -395,7 +483,7 @@ class SyncManagerTest {
 
     @Test
     fun sinConfiguracionNoHaceNada() {
-        val vacio = SyncManager(OkHttpClient(), almacen, fotos, ConfigFalsa(url = ""), permitirHttp = true)
+        val vacio = SyncManager(OkHttpClient(), almacen, fotos, documentos, ConfigFalsa(url = ""), permitirHttp = true)
         assertFalse(vacio.configurado())
         val r = runBlocking { vacio.sincronizar() }
         assertFalse(r.correcta)
@@ -404,7 +492,7 @@ class SyncManagerTest {
 
     @Test
     fun rechazaUnaDireccionSinHttpsEnProduccion() {
-        val estricto = SyncManager(OkHttpClient(), almacen, fotos, config, permitirHttp = false)
+        val estricto = SyncManager(OkHttpClient(), almacen, fotos, documentos, config, permitirHttp = false)
         val r = runBlocking { estricto.sincronizar() }
         assertTrue(r.error!!.contains("https"))
         assertTrue(peticiones.isEmpty())

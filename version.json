@@ -1,8 +1,8 @@
 {
-  "latestVersionCode": 10,
-  "latestVersionName": "1.1.0",
-  "apkUrl": "https://raw.githubusercontent.com/prevencionsymisa-cmyk/epis/main/releases/epi-scan-v1.1.0.apk",
-  "releaseNotes": "Sincronización con tu servidor: el catálogo se guarda en Postgres y se puede ver y editar desde la web. Se configura en Ajustes.",
+  "latestVersionCode": 11,
+  "latestVersionName": "1.2.0",
+  "apkUrl": "https://raw.githubusercontent.com/prevencionsymisa-cmyk/epis/main/releases/epi-scan-v1.2.0.apk",
+  "releaseNotes": "Ficha técnica en PDF: adjunta el PDF del distribuidor a cada EPI. Se guarda en el servidor, se sincroniza con los demás móviles y se ve en la web.",
   "mandatory": false,
-  "sha256": "42d31a00f3704974ba88dce8d86a5eaacb148330552a2a708abc6fb7cca8d531"
+  "sha256": "d8f43d5d036d00fea138004d9b4a6afa34d21434ccbecacc714a2d5c3f2eaa38"
 }

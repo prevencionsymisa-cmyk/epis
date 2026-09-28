@@ -8,7 +8,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import java.io.File
 
-class EpiRepository(private val dao: EpiDao) : AlmacenSync {
+/** [directorioDocumentos]: carpeta donde se guardan los PDF adjuntos (filesDir/documentos). */
+class EpiRepository(private val dao: EpiDao, private val directorioDocumentos: File) : AlmacenSync {
     fun observarTodos(): Flow<List<EpiEntity>> = dao.observarTodos()
 
     /** Cambios locales que aún no se han enviado al servidor. */
@@ -23,7 +24,7 @@ class EpiRepository(private val dao: EpiDao) : AlmacenSync {
     }
 
     /**
-     * Borra la ficha y las fotos que le pertenecen. Si el servidor ya la conocía se conserva un borrado
+     * Borra la ficha y las fotos y PDF que le pertenecen. Si el servidor ya la conocía se conserva un borrado
      * lógico hasta comunicárselo; si nunca se envió, se elimina sin más.
      */
     suspend fun eliminar(epi: EpiEntity) {
@@ -34,8 +35,11 @@ class EpiRepository(private val dao: EpiDao) : AlmacenSync {
         } else {
             dao.actualizar(actual.copy(eliminado = true, pendiente = true, actualizadoEn = System.currentTimeMillis()))
         }
-        borrarArchivos(actual.listaFotos())
+        borrarArchivos(actual.listaFotos() + actual.listaDocumentos().map { rutaDocumento(it.id).path })
     }
+
+    /** Archivo local de un PDF adjunto (puede no existir todavía si aún no se ha descargado). */
+    fun rutaDocumento(id: String): File = File(directorioDocumentos, id)
 
     suspend fun borrarArchivos(rutas: List<String>) = withContext(Dispatchers.IO) {
         rutas.forEach { runCatching { File(it).delete() } }

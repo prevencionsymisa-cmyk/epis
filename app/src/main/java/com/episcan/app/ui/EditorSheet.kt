@@ -1,5 +1,8 @@
 package com.episcan.app.ui
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,10 +18,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -47,6 +52,7 @@ import androidx.compose.runtime.LaunchedEffect
 import com.episcan.app.data.FichaClave
 import com.episcan.app.data.PARTES_CUERPO
 import com.episcan.app.data.buscarDuplicado
+import com.episcan.app.data.local.DocumentoAdjunto
 import com.episcan.app.data.local.EpiEntity
 import com.episcan.app.data.subcategoriasDe
 import java.io.File
@@ -60,8 +66,18 @@ fun EditorSheet(
     onGuardar: (EpiBorrador) -> Unit,
     onFusionar: (EpiBorrador, EpiEntity) -> Unit,
     onCancelar: () -> Unit,
+    documentos: List<DocumentoAdjunto> = emptyList(),
+    adjuntandoDocumento: Boolean = false,
+    documentoDescargado: (DocumentoAdjunto) -> Boolean = { true },
+    onAdjuntarDocumento: (Uri) -> Unit = {},
+    onQuitarDocumento: (DocumentoAdjunto) -> Unit = {},
+    onAbrirDocumento: (DocumentoAdjunto) -> Unit = {},
 ) {
     val estado = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // Selector de archivos del sistema, filtrado a PDF (Descargas, Drive, correo…)
+    val elegirPdf = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) onAdjuntarDocumento(uri)
+    }
     var parte by remember(borrador) { mutableStateOf(borrador.parteCuerpo) }
     var subcategoria by remember(borrador) { mutableStateOf(borrador.subcategoria) }
     var nombre by remember(borrador) { mutableStateOf(borrador.nombreEpi) }
@@ -236,6 +252,31 @@ fun EditorSheet(
             Campo("Normativa(s) EN / ISO / marcado CE", normativa, { normativa = it }, lineas = 2)
             Campo("Símbolos, pictogramas y significado", simbolos, { simbolos = it }, lineas = 6)
             Campo("Ficha técnica (código o referencia del fabricante)", fichaTecnica, { fichaTecnica = it })
+
+            // PDF de la ficha técnica del distribuidor o fabricante
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                documentos.forEach { doc ->
+                    FilaDocumento(
+                        doc = doc,
+                        descargado = documentoDescargado(doc),
+                        onAbrir = { onAbrirDocumento(doc) },
+                        onQuitar = { onQuitarDocumento(doc) },
+                    )
+                }
+                OutlinedButton(
+                    onClick = { elegirPdf.launch(arrayOf("application/pdf")) },
+                    enabled = !adjuntandoDocumento,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                ) {
+                    if (adjuntandoDocumento) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Text("  Adjuntando…")
+                    } else {
+                        Icon(Icons.Default.AttachFile, null)
+                        Text(if (documentos.isEmpty()) "  Adjuntar ficha técnica (PDF)" else "  Adjuntar otro PDF")
+                    }
+                }
+            }
             Campo("Distribuidor / Proveedor", distribuidor, { distribuidor = it })
 
             Row(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -250,7 +291,7 @@ fun EditorSheet(
                             ),
                         )
                     },
-                    enabled = valido,
+                    enabled = valido && !adjuntandoDocumento,
                     modifier = Modifier.weight(1f).height(56.dp),
                 ) { Text(if (duplicado != null && esNueva) "Guardar como nueva" else "Guardar", fontWeight = FontWeight.Bold) }
             }

@@ -2,6 +2,7 @@ package com.episcan.app.ui
 
 import android.app.Application
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -14,6 +15,7 @@ import com.episcan.app.data.FormatoSimbolos
 import com.episcan.app.data.PARTES_CUERPO
 import com.episcan.app.data.ResultadoIa
 import com.episcan.app.data.subcategoriasDe
+import com.episcan.app.data.local.DocumentoAdjunto
 import com.episcan.app.data.local.EpiEntity
 import com.episcan.app.data.remote.ErrorAnalisis
 import com.episcan.app.export.FilaExcel
@@ -58,6 +60,8 @@ data class EpiBorrador(
     val distribuidor: String = "",
     val observaciones: String = "",
     val fotos: List<String> = emptyList(),
+    /** PDF que la ficha tenía al abrir el editor (para saber cuáles se añadieron o quitaron al terminar). */
+    val documentos: List<DocumentoAdjunto> = emptyList(),
     val creadoEn: Long = System.currentTimeMillis(),
     /** true si viene de una propuesta de la IA: se avisa de que hay que validarla. */
     val propuestaIa: Boolean = false,
@@ -254,6 +258,7 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
             fotos = fotosBorrador.toList(), propuestaIa = propuestaIa,
         )
         fotosBorrador.clear() // ahora las fotos pertenecen al editor
+        documentosEditor.clear()
         pantalla = Pantalla.Inicio
     }
 
@@ -266,11 +271,14 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
             id = epi.id, uid = epi.uid, parteCuerpo = epi.parteCuerpo, subcategoria = epi.subcategoria, nombreEpi = epi.nombreEpi,
             marca = epi.marca, modelo = epi.modelo, normativa = epi.normativa, simbolos = epi.simbolos,
             fichaTecnica = epi.fichaTecnica, distribuidor = epi.distribuidor, observaciones = epi.observaciones,
-            fotos = epi.listaFotos(), creadoEn = epi.creadoEn,
+            fotos = epi.listaFotos(), documentos = epi.listaDocumentos(), creadoEn = epi.creadoEn,
         )
+        documentosEditor.clear()
+        documentosEditor.addAll(epi.listaDocumentos())
     }
 
     fun guardar(b: EpiBorrador) {
+        val docs = documentosEditor.toList()
         viewModelScope.launch {
             // Se parte de la ficha tal como está ahora en la base de datos: una sincronización puede haber
             // cambiado su revisión mientras el técnico editaba, y hay que conservarla para no provocar un falso conflicto
@@ -281,11 +289,15 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
                     parteCuerpo = b.parteCuerpo, subcategoria = b.subcategoria, nombreEpi = b.nombreEpi.trim(),
                     marca = b.marca.trim(), modelo = b.modelo.trim(), normativa = b.normativa.trim(), simbolos = b.simbolos.trim(),
                     fichaTecnica = b.fichaTecnica.trim(), distribuidor = b.distribuidor.trim(), observaciones = b.observaciones.trim(),
-                    fotos = b.fotos.joinToString(EpiEntity.SEPARADOR_FOTOS), creadoEn = actual?.creadoEn ?: b.creadoEn,
-                    eliminado = false,
+                    fotos = b.fotos.joinToString(EpiEntity.SEPARADOR_FOTOS), documentos = EpiEntity.documentosAJson(docs),
+                    creadoEn = actual?.creadoEn ?: b.creadoEn, eliminado = false,
                 ),
             )
+            // Los PDF que se quitaron en el editor ya no pertenecen a ninguna ficha
+            val quitados = b.documentos.filter { d -> docs.none { it.id == d.id } }
+            repo.borrarArchivos(quitados.map { repo.rutaDocumento(it.id).path })
             editor = null
+            documentosEditor.clear()
             mensaje(if (b.id == 0L) "EPI añadido al catálogo" else "Cambios guardados")
             sincronizarAlCambiar()
         }
@@ -296,12 +308,16 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
      * los campos que ésta tuviera vacíos. Las fotos que no caben (máximo [MAX_FOTOS]) se descartan.
      */
     fun fusionarEnExistente(b: EpiBorrador, existente: EpiEntity) {
+        val docsNuevos = documentosEditor.toList()
         viewModelScope.launch {
             val existente = repo.porUid(existente.uid) ?: existente
             val fotosActuales = existente.listaFotos()
             val caben = (MAX_FOTOS - fotosActuales.size).coerceAtLeast(0)
             val nuevas = b.fotos.take(caben)
             val sobrantes = b.fotos.drop(caben)
+            val docsActuales = existente.listaDocumentos()
+            val docsQueCaben = docsNuevos.take((MAX_DOCUMENTOS - docsActuales.size).coerceAtLeast(0))
+            val docsSobrantes = docsNuevos - docsQueCaben.toSet()
             repo.guardar(
                 existente.copy(
                     subcategoria = existente.subcategoria.ifBlank { b.subcategoria },
@@ -313,10 +329,12 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
                     distribuidor = existente.distribuidor.ifBlank { b.distribuidor.trim() },
                     observaciones = existente.observaciones.ifBlank { b.observaciones.trim() },
                     fotos = (fotosActuales + nuevas).joinToString(EpiEntity.SEPARADOR_FOTOS),
+                    documentos = EpiEntity.documentosAJson(docsActuales + docsQueCaben),
                 ),
             )
-            repo.borrarArchivos(sobrantes)
+            repo.borrarArchivos(sobrantes + docsSobrantes.map { repo.rutaDocumento(it.id).path })
             editor = null
+            documentosEditor.clear()
             sincronizarAlCambiar()
             mensaje(
                 when {
@@ -331,8 +349,63 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
     fun cancelarEditor() {
         val e = editor ?: return
         editor = null
+        // Los PDF adjuntados en esta edición y no guardados se descartan; los que ya tenía la ficha se conservan
+        val descartados = documentosEditor.filter { d -> e.documentos.none { it.id == d.id } }.map { repo.rutaDocumento(it.id).path }
+        documentosEditor.clear()
         // Una ficha nueva descartada no debe dejar fotos huérfanas en disco
-        if (e.id == 0L) viewModelScope.launch { repo.borrarArchivos(e.fotos) }
+        val fotos = if (e.id == 0L) e.fotos else emptyList()
+        if (fotos.isNotEmpty() || descartados.isNotEmpty()) viewModelScope.launch { repo.borrarArchivos(fotos + descartados) }
+    }
+
+    // ------------------------------------------------------------ documentos PDF del editor
+    /** PDF de la ficha que se está editando, tal como se verán al guardar. */
+    val documentosEditor = mutableStateListOf<DocumentoAdjunto>()
+    var adjuntandoDocumento by mutableStateOf(false)
+        private set
+
+    /** Archivo local de un PDF adjunto (no existe si aún no se ha descargado del servidor). */
+    fun archivoDocumento(doc: DocumentoAdjunto): File = repo.rutaDocumento(doc.id)
+
+    /** Copia a la app el PDF elegido (máximo [MAX_BYTES_DOCUMENTO]) y lo añade a la ficha en edición. */
+    fun adjuntarDocumento(uri: Uri) {
+        if (documentosEditor.size >= MAX_DOCUMENTOS) {
+            mensaje("Máximo $MAX_DOCUMENTOS documentos por EPI")
+            return
+        }
+        viewModelScope.launch {
+            adjuntandoDocumento = true
+            val id = "doc_${UUID.randomUUID()}.pdf"
+            val destino = repo.rutaDocumento(id)
+            val resultado = withContext(Dispatchers.IO) {
+                runCatching {
+                    val resolver = getApplication<Application>().contentResolver
+                    val nombre = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                        if (c.moveToFirst()) c.getString(0) else null
+                    }?.takeIf { it.isNotBlank() } ?: "Ficha técnica.pdf"
+                    destino.parentFile?.mkdirs()
+                    val entrada = resolver.openInputStream(uri) ?: error("No se pudo leer el archivo")
+                    val copiados = entrada.use { input ->
+                        destino.outputStream().use { output -> copiarConLimite(input, output, MAX_BYTES_DOCUMENTO) }
+                    }
+                    when {
+                        copiados < 0 -> error("El PDF pesa más de ${MAX_BYTES_DOCUMENTO / (1024 * 1024)} MB")
+                        !esPdf(destino) -> error("El archivo no es un PDF")
+                    }
+                    DocumentoAdjunto(id = id, nombre = nombre.take(200))
+                }.onFailure { destino.delete() }
+            }
+            adjuntandoDocumento = false
+            resultado
+                .onSuccess { documentosEditor.add(it) }
+                .onFailure { mensaje("No se pudo adjuntar: ${it.message}") }
+        }
+    }
+
+    /** Lo quita de la ficha en edición. El archivo se borra al guardar (o ya, si se acababa de adjuntar). */
+    fun quitarDocumento(doc: DocumentoAdjunto) {
+        documentosEditor.remove(doc)
+        val eraDeLaFicha = editor?.documentos?.any { it.id == doc.id } == true
+        if (!eraDeLaFicha) viewModelScope.launch { repo.borrarArchivos(listOf(repo.rutaDocumento(doc.id).path)) }
     }
 
     // ------------------------------------------------------------ eliminación
@@ -512,5 +585,28 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
 
     private companion object {
         const val MAX_FOTOS = 6
+        const val MAX_DOCUMENTOS = 10
+        /** Igual que el límite del servidor (20 MB). */
+        const val MAX_BYTES_DOCUMENTO = 20L * 1024 * 1024
+
+        /** Copia como mucho [limite] bytes. Devuelve los copiados, o -1 si el origen era más grande. */
+        fun copiarConLimite(input: java.io.InputStream, output: java.io.OutputStream, limite: Long): Long {
+            val buffer = ByteArray(64 * 1024)
+            var total = 0L
+            while (true) {
+                val n = input.read(buffer)
+                if (n < 0) return total
+                total += n
+                if (total > limite) return -1
+                output.write(buffer, 0, n)
+            }
+        }
+
+        /** Todo PDF empieza por "%PDF-" (el servidor rechaza cualquier otra cosa). */
+        fun esPdf(archivo: File): Boolean {
+            val cabecera = ByteArray(5)
+            val leidos = archivo.inputStream().use { it.read(cabecera) }
+            return leidos == 5 && String(cabecera, Charsets.ISO_8859_1) == "%PDF-"
+        }
     }
 }

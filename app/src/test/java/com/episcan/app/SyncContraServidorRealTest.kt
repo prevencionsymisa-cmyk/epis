@@ -1,5 +1,6 @@
 package com.episcan.app
 
+import com.episcan.app.data.local.DocumentoAdjunto
 import com.episcan.app.data.local.EpiEntity
 import com.episcan.app.sync.SyncManager
 import com.google.gson.JsonParser
@@ -32,17 +33,20 @@ class SyncContraServidorRealTest {
     private inner class Movil {
         val almacen = AlmacenFalso()
         val fotos = FotosFalsas()
+        val documentos = FotosFalsas()
         val config = ConfigFalsa(url = url ?: "", token = tokenMovil)
-        val sync = SyncManager(OkHttpClient(), almacen, fotos, config, permitirHttp = true)
+        val sync = SyncManager(OkHttpClient(), almacen, fotos, documentos, config, permitirHttp = true)
 
         fun sincronizar() = runBlocking { sync.sincronizar() }
 
-        fun nuevaFicha(nombre: String, fotoId: String? = null, foto: ByteArray = byteArrayOf()) {
+        fun nuevaFicha(nombre: String, fotoId: String? = null, foto: ByteArray = byteArrayOf(), pdf: Pair<DocumentoAdjunto, ByteArray>? = null) {
             if (fotoId != null) fotos.archivos[fotoId] = foto
+            if (pdf != null) documentos.archivos[pdf.first.id] = pdf.second
             almacen.agregar(
                 EpiEntity(
                     parteCuerpo = "Manos y Brazos", subcategoria = "Protección mecánica", nombreEpi = nombre, marca = "RECA",
                     fotos = if (fotoId != null) "/data/fotos/$fotoId" else "", actualizadoEn = System.nanoTime(),
+                    documentos = EpiEntity.documentosAJson(listOfNotNull(pdf?.first)),
                 ),
             )
         }
@@ -76,8 +80,11 @@ class SyncContraServidorRealTest {
         val b = Movil()
         val foto = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte(), 1, 2, 3, 4)
 
-        // 1. El móvil A crea dos fichas (una con foto) y las envía
-        a.nuevaFicha("Guantes A1 $id", fotoId = "epi_a1-$id-000.jpg", foto = foto)
+        val pdf = "%PDF-1.4\n% ficha técnica de prueba\n%%EOF\n".toByteArray(Charsets.ISO_8859_1)
+        val doc = DocumentoAdjunto(id = "doc_a1-$id-000.pdf", nombre = "Ficha técnica RECA.pdf")
+
+        // 1. El móvil A crea dos fichas (una con foto y PDF) y las envía
+        a.nuevaFicha("Guantes A1 $id", fotoId = "epi_a1-$id-000.jpg", foto = foto, pdf = doc to pdf)
         a.nuevaFicha("Guantes A2 $id")
         val r1 = a.sincronizar()
         assertTrue(r1.error, r1.correcta)
@@ -91,6 +98,8 @@ class SyncContraServidorRealTest {
         assertNotNull(b.ficha("Guantes A1 $id"))
         assertNotNull(b.ficha("Guantes A2 $id"))
         assertArrayEquals(foto, b.fotos.archivos["epi_a1-$id-000.jpg"])
+        assertEquals(listOf(doc), b.ficha("Guantes A1 $id")!!.listaDocumentos())
+        assertArrayEquals("y descarga el PDF", pdf, b.documentos.archivos[doc.id])
 
         // 3. B edita una ficha y A recibe el cambio
         b.editar("Guantes A2 $id") { it.copy(marca = "Editada por B") }
@@ -108,6 +117,7 @@ class SyncContraServidorRealTest {
         assertEquals(200, codigoPut)
         assertTrue(a.sincronizar().correcta)
         assertEquals("FT-DESDE-LA-WEB", a.ficha("Guantes A1 $id")!!.fichaTecnica)
+        assertEquals("la edición de la web conserva el PDF", listOf(doc), a.ficha("Guantes A1 $id")!!.listaDocumentos())
 
         // 5. Conflicto: A y B editan la misma ficha sin conexión; B sincroniza primero; gana el servidor (B) y A se entera
         assertTrue(b.sincronizar().correcta) // B se pone al día con lo de la web
@@ -127,6 +137,7 @@ class SyncContraServidorRealTest {
         assertTrue(b.sincronizar().correcta)
         assertNull(b.ficha("Guantes A1 $id"))
         assertNull("sus fotos también se borran del móvil B", b.fotos.archivos["epi_a1-$id-000.jpg"])
+        assertNull("y sus PDF", b.documentos.archivos[doc.id])
         val tras = JsonParser.parseString(web("GET", "/api/epis?q=Guantes%20A1%20$id").second).asJsonObject
         assertEquals(0, tras["total"].asInt)
 

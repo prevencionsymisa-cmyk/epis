@@ -16,3 +16,4 @@
 -keep class com.episcan.app.sync.ResultadoItemPush { *; }
 -keep class com.episcan.app.sync.RespuestaPush { *; }
 -keep class com.episcan.app.sync.RespuestaPull { *; }
+-keep class com.episcan.app.data.local.DocumentoAdjunto { *; }

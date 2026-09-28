@@ -1,5 +1,6 @@
 package com.episcan.app.sync
 
+import com.episcan.app.data.local.DocumentoAdjunto
 import com.episcan.app.data.local.EpiEntity
 import java.io.File
 
@@ -23,6 +24,8 @@ data class EpiDto(
     val observaciones: String = "",
     /** Identificadores de las fotos (nombre del archivo, p. ej. "epi_….jpg"), no rutas. */
     val fotos: List<String> = emptyList(),
+    /** PDFs adjuntos: identificador (nombre del archivo, "doc_….pdf") y nombre original. */
+    val documentos: List<DocumentoAdjunto> = emptyList(),
     val creadoEn: Long = 0,
     val actualizadoEn: Long = 0,
 )
@@ -62,6 +65,7 @@ fun EpiEntity.aDto(): EpiDto = EpiDto(
     distribuidor = distribuidor,
     observaciones = observaciones,
     fotos = listaFotos().map { File(it).name },
+    documentos = listaDocumentos(),
     creadoEn = creadoEn,
 )
 
@@ -80,6 +84,8 @@ fun EpiDto.aEntidad(existente: EpiEntity?, directorioFotos: String): EpiEntity =
     distribuidor = distribuidor,
     observaciones = observaciones,
     fotos = fotos.joinToString(EpiEntity.SEPARADOR_FOTOS) { File(directorioFotos, it).path },
+    // Si el JSON trae "documentos": null, Gson deja el campo a null aunque Kotlin diga que no puede serlo
+    documentos = EpiEntity.documentosAJson(documentos.orEmpty().filter { it.id.isNotBlank() }),
     creadoEn = if (creadoEn > 0) creadoEn else existente?.creadoEn ?: System.currentTimeMillis(),
     revision = revision,
     actualizadoEn = System.currentTimeMillis(),
@@ -124,7 +130,7 @@ interface ConfigSync {
     var servidorSincronizado: String
 }
 
-/** Fotos en un directorio de la app (filesDir/fotos). */
+/** Archivos en un directorio de la app: filesDir/fotos para las fotos y filesDir/documentos para los PDF. */
 class FotosLocales(private val carpeta: File) : AlmacenFotos {
     override val directorio: String get() = carpeta.path
 
@@ -140,7 +146,7 @@ class FotosLocales(private val carpeta: File) : AlmacenFotos {
         temporal.writeBytes(bytes)
         if (!temporal.renameTo(destino)) {
             temporal.delete()
-            error("No se pudo guardar la foto $id")
+            error("No se pudo guardar el archivo $id")
         }
     }
 

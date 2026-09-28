@@ -1,11 +1,13 @@
 package com.episcan.app.sync
 
+import com.episcan.app.data.local.EpiEntity
 import com.google.gson.Gson
 import com.google.gson.JsonParseException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -17,9 +19,9 @@ private class ErrorSync(mensaje: String) : Exception(mensaje)
 
 /**
  * Sincroniza el catálogo local con el servidor (API en Coolify), en los dos sentidos:
- *  1. ENVÍA los cambios locales pendientes (fichas nuevas, editadas y borradas) y sus fotos.
+ *  1. ENVÍA los cambios locales pendientes (fichas nuevas, editadas y borradas), sus fotos y sus PDF.
  *  2. RECIBE lo que haya cambiado en el servidor desde la última vez (otros móviles o la web).
- *  3. DESCARGA las fotos que falten.
+ *  3. DESCARGA las fotos y los PDF que falten.
  *
  * Conflictos: si una ficha se editó a la vez aquí y en otro sitio, gana la versión del servidor y se avisa.
  * Sin conexión no pasa nada: los cambios quedan pendientes y se envían en la siguiente sincronización.
@@ -28,6 +30,8 @@ class SyncManager(
     private val cliente: OkHttpClient,
     private val almacen: AlmacenSync,
     private val fotos: AlmacenFotos,
+    /** Documentos PDF adjuntos; se tratan igual que las fotos, en su propia ruta de la API. */
+    private val documentos: AlmacenFotos,
     private val config: ConfigSync,
     /** Solo para tests con un servidor local sin TLS. */
     private val permitirHttp: Boolean = false,
@@ -35,6 +39,7 @@ class SyncManager(
     private val gson = Gson()
     private val mutex = Mutex()
     private val fotosYaSubidas = mutableSetOf<String>()
+    private val documentosYaSubidos = mutableSetOf<String>()
 
     fun configurado() = config.url.isNotBlank() && config.token.isNotBlank()
 
@@ -56,7 +61,7 @@ class SyncManager(
             }
             val (enviadas, conflictos) = enviar(base)
             val recibidas = recibir(base)
-            descargarFotosFaltantes(base)
+            descargarArchivosFaltantes(base)
             ResultadoSync(enviadas = enviadas, recibidas = recibidas, conflictos = conflictos)
         } catch (e: ErrorSync) {
             ResultadoSync(error = e.message)
@@ -80,7 +85,10 @@ class SyncManager(
         var enviadas = 0
         val conflictos = mutableListOf<String>()
         for (lote in pendientes.chunked(TAMANO_LOTE)) {
-            lote.filterNot { it.eliminado }.forEach { subirFotos(base, it.listaFotos().map { ruta -> File(ruta).name }) }
+            lote.filterNot { it.eliminado }.forEach { ficha ->
+                subirArchivos(base, "fotos", ficha.listaFotos().map { File(it).name }, fotos, JPEG, fotosYaSubidas)
+                subirArchivos(base, "documentos", ficha.listaDocumentos().map { it.id }, documentos, PDF, documentosYaSubidos)
+            }
 
             val cuerpo = gson.toJson(PeticionPush(lote.map { it.aDto() }))
             val respuesta = gson.fromJson(post("$base/api/sync/push", cuerpo), RespuestaPush::class.java)
@@ -99,7 +107,7 @@ class SyncManager(
                         conflictos += local.nombreEpi
                         // Gana el servidor: se sustituye la versión local (o se elimina, si allí la borraron)
                         if (delServidor == null || delServidor.eliminado) {
-                            local.listaFotos().forEach { fotos.borrar(File(it).name) }
+                            borrarArchivosDe(local)
                             almacen.borrarLocal(local.uid)
                         } else {
                             almacen.guardarDelServidor(delServidor.aEntidad(local, fotos.directorio))
@@ -111,28 +119,41 @@ class SyncManager(
         return enviadas to conflictos
     }
 
-    private fun subirFotos(base: String, ids: List<String>) {
+    /** Sube a /api/[ruta]/{id} los archivos que el servidor aún no tenga (una foto o un PDF nunca cambian). */
+    private fun subirArchivos(
+        base: String,
+        ruta: String,
+        ids: List<String>,
+        almacenArchivos: AlmacenFotos,
+        tipo: MediaType,
+        yaSubidos: MutableSet<String>,
+    ) {
         for (id in ids) {
-            if (id in fotosYaSubidas) continue
-            val bytes = fotos.leer(id) ?: continue
-            if (!existeFotoEnServidor(base, id)) {
+            if (id in yaSubidos) continue
+            val bytes = almacenArchivos.leer(id) ?: continue
+            if (!existeEnServidor("$base/api/$ruta/$id")) {
                 llamar(
-                    Request.Builder().url("$base/api/fotos/$id").header("Authorization", "Bearer ${config.token}")
-                        .put(bytes.toRequestBody(JPEG)).build(),
+                    Request.Builder().url("$base/api/$ruta/$id").header("Authorization", "Bearer ${config.token}")
+                        .put(bytes.toRequestBody(tipo)).build(),
                 )
             }
-            fotosYaSubidas += id
+            yaSubidos += id
         }
     }
 
-    private fun existeFotoEnServidor(base: String, id: String): Boolean =
-        cliente.newCall(Request.Builder().url("$base/api/fotos/$id").head().build()).execute().use { r ->
+    private fun existeEnServidor(url: String): Boolean =
+        cliente.newCall(Request.Builder().url(url).head().build()).execute().use { r ->
             when {
                 r.isSuccessful -> true
                 r.code == 404 -> false
-                else -> throw ErrorSync("El servidor respondió ${r.code} al comprobar una foto")
+                else -> throw ErrorSync("El servidor respondió ${r.code} al comprobar un archivo")
             }
         }
+
+    private fun borrarArchivosDe(ficha: EpiEntity) {
+        ficha.listaFotos().forEach { fotos.borrar(File(it).name) }
+        ficha.listaDocumentos().forEach { documentos.borrar(it.id) }
+    }
 
     // ------------------------------------------------------------------ recibir
 
@@ -157,30 +178,36 @@ class SyncManager(
 
         if (item.eliminado) {
             if (local == null) return false
-            local.listaFotos().forEach { fotos.borrar(File(it).name) }
+            borrarArchivosDe(local)
             almacen.borrarLocal(item.uid)
             return true
         }
         if (local != null && item.revision <= local.revision) return false
-        almacen.guardarDelServidor(item.aEntidad(local, fotos.directorio))
+        val nueva = item.aEntidad(local, fotos.directorio)
+        almacen.guardarDelServidor(nueva)
+        // Los PDF que se quitaron en otro sitio ya no hacen falta en este móvil
+        val vigentes = nueva.listaDocumentos().map { it.id }.toSet()
+        local?.listaDocumentos()?.filter { it.id !in vigentes }?.forEach { documentos.borrar(it.id) }
         return true
     }
 
-    // ------------------------------------------------------------------ fotos
+    // ------------------------------------------------------------------ fotos y documentos
 
-    private suspend fun descargarFotosFaltantes(base: String) {
+    private suspend fun descargarArchivosFaltantes(base: String) {
         for (ficha in almacen.vivas()) {
-            for (ruta in ficha.listaFotos()) {
-                val id = File(ruta).name
-                if (fotos.existe(id)) continue
-                try {
-                    cliente.newCall(Request.Builder().url("$base/api/fotos/$id").build()).execute().use { r ->
-                        if (r.isSuccessful) r.body?.bytes()?.takeIf { it.isNotEmpty() }?.let { fotos.guardar(id, it) }
-                    }
-                } catch (_: IOException) {
-                    // Una foto que no baja no es motivo para fallar: se reintenta en la siguiente sincronización
-                }
+            ficha.listaFotos().forEach { descargarSiFalta("$base/api/fotos", File(it).name, fotos) }
+            ficha.listaDocumentos().forEach { descargarSiFalta("$base/api/documentos", it.id, documentos) }
+        }
+    }
+
+    private fun descargarSiFalta(rutaBase: String, id: String, almacenArchivos: AlmacenFotos) {
+        if (almacenArchivos.existe(id)) return
+        try {
+            cliente.newCall(Request.Builder().url("$rutaBase/$id").build()).execute().use { r ->
+                if (r.isSuccessful) r.body?.bytes()?.takeIf { it.isNotEmpty() }?.let { almacenArchivos.guardar(id, it) }
             }
+        } catch (_: IOException) {
+            // Un archivo que no baja no es motivo para fallar: se reintenta en la siguiente sincronización
         }
     }
 
@@ -206,5 +233,6 @@ class SyncManager(
         const val TAMANO_PAGINA = 200
         val JSON = "application/json; charset=utf-8".toMediaType()
         val JPEG = "image/jpeg".toMediaType()
+        val PDF = "application/pdf".toMediaType()
     }
 }

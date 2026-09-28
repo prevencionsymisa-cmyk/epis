@@ -36,6 +36,16 @@ CREATE TABLE IF NOT EXISTS epi_fotos (
     creado_en timestamptz NOT NULL DEFAULT now()
 );
 
+-- Documentos PDF adjuntos (fichas técnicas del distribuidor). En la ficha se guarda una lista
+-- [{"id": "...", "nombre": "..."}]; el contenido va en epi_documentos, igual que las fotos.
+ALTER TABLE epis ADD COLUMN IF NOT EXISTS documentos jsonb NOT NULL DEFAULT '[]';
+
+CREATE TABLE IF NOT EXISTS epi_documentos (
+    id        text        PRIMARY KEY,
+    contenido bytea       NOT NULL,
+    creado_en timestamptz NOT NULL DEFAULT now()
+);
+
 -- Zonas del cuerpo y subcategorías válidas (la API lo rellena al arrancar). Úsalo para los desplegables de la web.
 CREATE TABLE IF NOT EXISTS catalogo_subcategorias (
     parte        text NOT NULL,
