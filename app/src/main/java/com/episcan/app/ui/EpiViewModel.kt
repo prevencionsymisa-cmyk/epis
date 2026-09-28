@@ -45,6 +45,8 @@ enum class Pantalla { Inicio, Captura, Ajustes }
 /** Datos editables de una ficha (nueva o existente) mientras se muestra el Bottom Sheet. */
 data class EpiBorrador(
     val id: Long = 0,
+    /** Identificador global de la ficha ("" mientras es nueva: se le asigna uno al guardar). */
+    val uid: String = "",
     val parteCuerpo: String = "",
     val subcategoria: String = "",
     val nombreEpi: String = "",
@@ -140,12 +142,14 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
                 return@launch
             }
             var asignadas = 0
-            pendientes.forEach { e ->
+            pendientes.forEach { antigua ->
+                val e = repo.porUid(antigua.uid)?.takeIf { it.subcategoria.isBlank() } ?: return@forEach
                 ClasificadorSubcategoria.clasificar(e.parteCuerpo, e.nombreEpi, e.normativa)?.let { sub ->
                     repo.guardar(e.copy(subcategoria = sub))
                     asignadas++
                 }
             }
+            if (asignadas > 0) sincronizarAlCambiar()
             val sinResolver = pendientes.size - asignadas
             mensaje(
                 if (sinResolver == 0) "Subcategoría asignada a las $asignadas fichas"
@@ -259,7 +263,7 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
 
     fun editar(epi: EpiEntity) {
         editor = EpiBorrador(
-            id = epi.id, parteCuerpo = epi.parteCuerpo, subcategoria = epi.subcategoria, nombreEpi = epi.nombreEpi,
+            id = epi.id, uid = epi.uid, parteCuerpo = epi.parteCuerpo, subcategoria = epi.subcategoria, nombreEpi = epi.nombreEpi,
             marca = epi.marca, modelo = epi.modelo, normativa = epi.normativa, simbolos = epi.simbolos,
             fichaTecnica = epi.fichaTecnica, distribuidor = epi.distribuidor, observaciones = epi.observaciones,
             fotos = epi.listaFotos(), creadoEn = epi.creadoEn,
@@ -268,16 +272,22 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
 
     fun guardar(b: EpiBorrador) {
         viewModelScope.launch {
+            // Se parte de la ficha tal como está ahora en la base de datos: una sincronización puede haber
+            // cambiado su revisión mientras el técnico editaba, y hay que conservarla para no provocar un falso conflicto
+            val actual = b.uid.takeIf { it.isNotBlank() }?.let { repo.porUid(it) }
+            val base = actual ?: EpiEntity(parteCuerpo = b.parteCuerpo, nombreEpi = b.nombreEpi)
             repo.guardar(
-                EpiEntity(
-                    id = b.id, parteCuerpo = b.parteCuerpo, subcategoria = b.subcategoria, nombreEpi = b.nombreEpi.trim(),
+                base.copy(
+                    parteCuerpo = b.parteCuerpo, subcategoria = b.subcategoria, nombreEpi = b.nombreEpi.trim(),
                     marca = b.marca.trim(), modelo = b.modelo.trim(), normativa = b.normativa.trim(), simbolos = b.simbolos.trim(),
                     fichaTecnica = b.fichaTecnica.trim(), distribuidor = b.distribuidor.trim(), observaciones = b.observaciones.trim(),
-                    fotos = b.fotos.joinToString(EpiEntity.SEPARADOR_FOTOS), creadoEn = b.creadoEn,
+                    fotos = b.fotos.joinToString(EpiEntity.SEPARADOR_FOTOS), creadoEn = actual?.creadoEn ?: b.creadoEn,
+                    eliminado = false,
                 ),
             )
             editor = null
             mensaje(if (b.id == 0L) "EPI añadido al catálogo" else "Cambios guardados")
+            sincronizarAlCambiar()
         }
     }
 
@@ -287,6 +297,7 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun fusionarEnExistente(b: EpiBorrador, existente: EpiEntity) {
         viewModelScope.launch {
+            val existente = repo.porUid(existente.uid) ?: existente
             val fotosActuales = existente.listaFotos()
             val caben = (MAX_FOTOS - fotosActuales.size).coerceAtLeast(0)
             val nuevas = b.fotos.take(caben)
@@ -306,6 +317,7 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
             )
             repo.borrarArchivos(sobrantes)
             editor = null
+            sincronizarAlCambiar()
             mensaje(
                 when {
                     nuevas.isEmpty() && sobrantes.isNotEmpty() -> "La ficha ya tiene $MAX_FOTOS fotos; no se añadió ninguna"
@@ -335,6 +347,7 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             repo.eliminar(e)
             mensaje("EPI eliminado")
+            sincronizarAlCambiar()
         }
     }
 
@@ -379,6 +392,57 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
         val fecha = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale("es", "ES")).format(ahora)
         archivo.outputStream().buffered().use { XlsxWriter.escribir(it, filas, fecha) }
         return archivo
+    }
+
+    // ------------------------------------------------------------ sincronización con el servidor
+    /** Fichas con cambios locales todavía sin enviar al servidor. */
+    val pendientesSync: StateFlow<Int> = repo.observarPendientes()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    var sincronizando by mutableStateOf(false)
+        private set
+    private var sincronizacionesEnCurso = 0
+
+    fun sincronizacionConfigurada() = contenedor.sync.configurado()
+
+    /**
+     * Envía los cambios locales y recibe los del servidor. [manual] = el usuario pulsó el botón: se le
+     * responde siempre; en las automáticas solo se avisa si llegó algo nuevo, hubo conflictos o falló la config.
+     */
+    fun sincronizar(manual: Boolean = true) {
+        if (!contenedor.sync.configurado()) {
+            if (manual) mensaje("Configura la dirección del servidor y el token en Ajustes")
+            return
+        }
+        viewModelScope.launch {
+            sincronizacionesEnCurso++
+            sincronizando = true
+            val r = try {
+                contenedor.sync.sincronizar()
+            } finally {
+                sincronizacionesEnCurso--
+                sincronizando = sincronizacionesEnCurso > 0
+            }
+            if (r.conflictos.isNotEmpty()) {
+                mensaje(
+                    "Se editó a la vez en otro sitio: se mantuvo la versión del servidor de " +
+                        r.conflictos.joinToString(", ") { "«$it»" },
+                )
+            }
+            when {
+                !r.correcta -> if (manual) mensaje("No se pudo sincronizar: ${r.error}")
+                manual -> mensaje(
+                    if (r.enviadas == 0 && r.recibidas == 0) "Todo está al día"
+                    else "Sincronizado: ${r.enviadas} enviadas, ${r.recibidas} recibidas",
+                )
+                r.recibidas > 0 -> mensaje("Se actualizaron ${r.recibidas} fichas desde el servidor")
+            }
+        }
+    }
+
+    /** Tras un cambio local, se intenta enviar en cuanto hay conexión (sin molestar si no la hay). */
+    private fun sincronizarAlCambiar() {
+        if (ajustes.syncAuto) sincronizar(manual = false)
     }
 
     // ------------------------------------------------------------ OTA

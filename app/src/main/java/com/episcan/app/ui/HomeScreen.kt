@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -121,6 +122,12 @@ fun HomeScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onSecondary,
                 ),
                 actions = {
+                    if (vm.sincronizacionConfigurada()) {
+                        IconButton(onClick = { vm.sincronizar(manual = true) }, enabled = !vm.sincronizando, modifier = Modifier.size(52.dp)) {
+                            if (vm.sincronizando) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp, color = Color.White)
+                            else Icon(Icons.Default.Sync, contentDescription = "Sincronizar con el servidor")
+                        }
+                    }
                     Box {
                         IconButton(
                             onClick = { menuExportar = true },

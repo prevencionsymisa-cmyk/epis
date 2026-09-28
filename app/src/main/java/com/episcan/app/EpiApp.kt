@@ -7,7 +7,10 @@ import com.episcan.app.data.local.AppDatabase
 import com.episcan.app.data.remote.EpiAnalyzer
 import com.episcan.app.data.remote.GeminiApi
 import com.episcan.app.ota.OtaUpdateManager
+import com.episcan.app.sync.FotosLocales
+import com.episcan.app.sync.SyncManager
 import okhttp3.OkHttpClient
+import java.io.File
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
@@ -32,6 +35,7 @@ class AppContainer(app: Application) {
     val repositorio = EpiRepository(AppDatabase.crear(app).epiDao())
     val analizador = EpiAnalyzer(geminiApi, ajustes)
     val ota = OtaUpdateManager(app, http)
+    val sync = SyncManager(http, repositorio, FotosLocales(File(app.filesDir, "fotos")), ajustes)
 }
 
 class EpiApp : Application() {

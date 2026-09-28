@@ -1,8 +1,8 @@
 {
-  "latestVersionCode": 9,
-  "latestVersionName": "1.0.8",
-  "apkUrl": "https://raw.githubusercontent.com/prevencionsymisa-cmyk/epis/main/releases/epi-scan-v1.0.8.apk",
-  "releaseNotes": "Simbología más clara (un bloque por norma, una línea por concepto) y botón en Ajustes para clasificar por subcategoría las fichas existentes.",
+  "latestVersionCode": 10,
+  "latestVersionName": "1.1.0",
+  "apkUrl": "https://raw.githubusercontent.com/prevencionsymisa-cmyk/epis/main/releases/epi-scan-v1.1.0.apk",
+  "releaseNotes": "Sincronización con tu servidor: el catálogo se guarda en Postgres y se puede ver y editar desde la web. Se configura en Ajustes.",
   "mandatory": false,
-  "sha256": "770a7ebf84273ff4b6f6f6ab155577fd49d6a04cf3b84c87041583e8ab56b11b"
+  "sha256": "42d31a00f3704974ba88dce8d86a5eaacb148330552a2a708abc6fb7cca8d531"
 }

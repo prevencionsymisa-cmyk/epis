@@ -9,3 +9,5 @@ local.properties
 *.jks
 # Los APK publicados para la OTA sí se versionan
 !releases/*.apk
+node_modules/
+.env

@@ -81,6 +81,7 @@ class MainActivity : ComponentActivity() {
         val snackbar = remember { SnackbarHostState() }
         LaunchedEffect(Unit) { vm.mensajes.collect { snackbar.showSnackbar(it) } }
         LaunchedEffect(Unit) { if (vm.ajustes.otaAutoComprobar) vm.comprobarActualizaciones(manual = false) }
+        LaunchedEffect(Unit) { if (vm.ajustes.syncAuto) vm.sincronizar(manual = false) }
 
         when (vm.pantalla) {
             Pantalla.Inicio -> HomeScreen(

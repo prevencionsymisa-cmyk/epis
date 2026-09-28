@@ -10,3 +10,9 @@
 -dontwarn kotlin.Unit
 -dontwarn retrofit2.KotlinExtensions
 -dontwarn retrofit2.KotlinExtensions$*
+
+-keep class com.episcan.app.sync.EpiDto { *; }
+-keep class com.episcan.app.sync.PeticionPush { *; }
+-keep class com.episcan.app.sync.ResultadoItemPush { *; }
+-keep class com.episcan.app.sync.RespuestaPush { *; }
+-keep class com.episcan.app.sync.RespuestaPull { *; }

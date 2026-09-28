@@ -24,12 +24,14 @@ android {
         applicationId = "com.episcan.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 9
-        versionName = "1.0.8"
+        versionCode = 10
+        versionName = "1.1.0"
 
         buildConfigField("String", "GEMINI_API_KEY", "\"${prop("GEMINI_API_KEY")}\"")
         buildConfigField("String", "GEMINI_MODEL", "\"${prop("GEMINI_MODEL", "gemini-2.5-flash")}\"")
         buildConfigField("String", "OTA_UPDATE_URL", "\"${prop("OTA_UPDATE_URL")}\"")
+        // Dirección de la API de sincronización (no es secreta). El token NO va aquí: se escribe en Ajustes.
+        buildConfigField("String", "SYNC_URL", "\"${prop("SYNC_URL")}\"")
         buildConfigField("boolean", "PLAY_IN_APP_UPDATES", prop("PLAY_IN_APP_UPDATES", "false"))
     }
 
@@ -111,4 +113,6 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
 }

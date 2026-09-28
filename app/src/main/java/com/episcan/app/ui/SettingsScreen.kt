@@ -53,6 +53,11 @@ fun SettingsScreen(vm: EpiViewModel, snackbar: SnackbarHostState) {
     var modelo by remember { mutableStateOf(ajustes.geminiModel) }
     var urlOta by remember { mutableStateOf(ajustes.otaUrl) }
     var autoOta by remember { mutableStateOf(ajustes.otaAutoComprobar) }
+    var syncUrl by remember { mutableStateOf(ajustes.url) }
+    var syncToken by remember { mutableStateOf(ajustes.token) }
+    var verToken by remember { mutableStateOf(false) }
+    var syncAuto by remember { mutableStateOf(ajustes.syncAuto) }
+    val pendientesSync by vm.pendientesSync.collectAsState()
     val sinSubcategoria by vm.sinSubcategoria.collectAsState()
     var confirmarClasificar by remember { mutableStateOf(false) }
 
@@ -61,6 +66,9 @@ fun SettingsScreen(vm: EpiViewModel, snackbar: SnackbarHostState) {
         ajustes.geminiModel = modelo
         ajustes.otaUrl = urlOta
         ajustes.otaAutoComprobar = autoOta
+        ajustes.url = syncUrl
+        ajustes.token = syncToken
+        ajustes.syncAuto = syncAuto
     }
 
     BackHandler { guardar(); vm.pantalla = Pantalla.Inicio }
@@ -146,6 +154,52 @@ fun SettingsScreen(vm: EpiViewModel, snackbar: SnackbarHostState) {
             ) {
                 Text(if (sinSubcategoria > 0) "Clasificar fichas sin subcategoría ($sinSubcategoria)" else "Todas las fichas tienen subcategoría")
             }
+
+            Text("Sincronización con el servidor", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
+            Text(
+                "Guarda el catálogo en tu servidor para verlo y editarlo desde la web, y compartirlo entre móviles. " +
+                    "Sin conexión la app funciona igual y envía los cambios cuando pueda.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = syncUrl,
+                onValueChange = { syncUrl = it },
+                label = { Text("Dirección del servidor (https)") },
+                placeholder = { Text("https://api-epis.midominio.com") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = syncToken,
+                onValueChange = { syncToken = it },
+                label = { Text("Token de acceso") },
+                singleLine = true,
+                visualTransformation = if (verToken) VisualTransformation.None else PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth(),
+                supportingText = { Text("Se guarda solo en este móvil. Te lo da quien administra el servidor.") },
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(checked = verToken, onCheckedChange = { verToken = it })
+                Text("  Mostrar token")
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(checked = syncAuto, onCheckedChange = { syncAuto = it })
+                Text("  Sincronizar automáticamente")
+            }
+            Button(
+                onClick = { guardar(); vm.sincronizar(manual = true) },
+                enabled = !vm.sincronizando,
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+            ) {
+                if (vm.sincronizando) CircularProgressIndicator(Modifier.size(22.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                else Text("Sincronizar ahora")
+            }
+            Text(
+                if (pendientesSync == 0) "Todo lo de este móvil está enviado" else "$pendientesSync fichas con cambios sin enviar",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
             Text("Actualizaciones (OTA)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
             OutlinedTextField(

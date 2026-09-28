@@ -40,6 +40,12 @@ Publica un JSON en una URL https (GitHub Releases, S3, servidor propio):
 
 Se compara `latestVersionCode` con el `versionCode` instalado (`app/build.gradle.kts`). El APK nuevo **debe estar firmado con la misma clave** que el instalado, o Android rechazará la actualización.
 
+## Servidor y sincronización (Coolify)
+
+La carpeta [`server/`](server/README.md) contiene una API (Node + PostgreSQL) para guardar el catálogo en tu servidor,
+verlo y editarlo desde una web y compartirlo entre móviles. La guía de despliegue en Coolify y de conexión con la web
+está en [`server/README.md`](server/README.md). En la app se configura en **Ajustes → Sincronización con el servidor**.
+
 ## Estructura
 
 - `data/` Room (`EpiEntity`, `EpiDao`), repositorio, ajustes y cliente Gemini (`remote/EpiAnalyzer.kt` contiene el prompt normativo).
