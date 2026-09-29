@@ -4,6 +4,8 @@
     <external-files-path name="apk_ota" path="Download/" />
     <!-- Excel generado para compartir -->
     <cache-path name="exportaciones" path="exports/" />
+    <!-- Foto temporal que hace la cámara del sistema al añadir fotos desde el editor -->
+    <cache-path name="capturas" path="capturas/" />
     <!-- PDF adjuntos (fichas técnicas), para abrirlos con el visor de PDF del móvil -->
     <files-path name="documentos" path="documentos/" />
 </paths>

@@ -191,21 +191,26 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch {
             procesandoFoto = true
-            val dir = File(getApplication<Application>().filesDir, "fotos")
-            val nuevas = withContext(Dispatchers.IO) {
-                uris.take(hueco).mapNotNull { uri ->
-                    val destino = File(dir, "epi_${UUID.randomUUID()}.jpg")
-                    runCatching { ImageUtils.guardarComprimida(getApplication(), uri, destino) }
-                        .map { destino.path }
-                        .onFailure { destino.delete() }
-                        .getOrNull()
-                }.also { temporales.forEach { it.delete() } }
-            }
-            if (nuevas.size < uris.take(hueco).size) mensaje("Alguna imagen no se pudo procesar")
-            if (uris.size > hueco) mensaje("Solo se añadieron $hueco (máximo $MAX_FOTOS)")
-            fotosBorrador.addAll(nuevas)
+            fotosBorrador.addAll(comprimirFotos(uris, hueco, temporales))
             procesandoFoto = false
         }
+    }
+
+    /** Comprime como mucho [hueco] imágenes en filesDir/fotos y devuelve sus rutas. Avisa de lo que no se pudo añadir. */
+    private suspend fun comprimirFotos(uris: List<Uri>, hueco: Int, temporales: List<File>): List<String> {
+        val dir = File(getApplication<Application>().filesDir, "fotos")
+        val nuevas = withContext(Dispatchers.IO) {
+            uris.take(hueco).mapNotNull { uri ->
+                val destino = File(dir, "epi_${UUID.randomUUID()}.jpg")
+                runCatching { ImageUtils.guardarComprimida(getApplication(), uri, destino) }
+                    .map { destino.path }
+                    .onFailure { destino.delete() }
+                    .getOrNull()
+            }.also { temporales.forEach { it.delete() } }
+        }
+        if (nuevas.size < uris.take(hueco).size) mensaje("Alguna imagen no se pudo procesar")
+        if (uris.size > hueco) mensaje("Solo se añadieron $hueco (máximo $MAX_FOTOS)")
+        return nuevas
     }
 
     fun quitarFotoBorrador(ruta: String) {
@@ -257,6 +262,8 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
             distribuidor = r.distribuidor, observaciones = r.observaciones,
             fotos = fotosBorrador.toList(), propuestaIa = propuestaIa,
         )
+        fotosEditor.clear()
+        fotosEditor.addAll(fotosBorrador)
         fotosBorrador.clear() // ahora las fotos pertenecen al editor
         documentosEditor.clear()
         pantalla = Pantalla.Inicio
@@ -273,12 +280,15 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
             fichaTecnica = epi.fichaTecnica, distribuidor = epi.distribuidor, observaciones = epi.observaciones,
             fotos = epi.listaFotos(), documentos = epi.listaDocumentos(), creadoEn = epi.creadoEn,
         )
+        fotosEditor.clear()
+        fotosEditor.addAll(epi.listaFotos())
         documentosEditor.clear()
         documentosEditor.addAll(epi.listaDocumentos())
     }
 
     fun guardar(b: EpiBorrador) {
         val docs = documentosEditor.toList()
+        val fotos = fotosEditor.toList()
         viewModelScope.launch {
             // Se parte de la ficha tal como está ahora en la base de datos: una sincronización puede haber
             // cambiado su revisión mientras el técnico editaba, y hay que conservarla para no provocar un falso conflicto
@@ -289,14 +299,15 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
                     parteCuerpo = b.parteCuerpo, subcategoria = b.subcategoria, nombreEpi = b.nombreEpi.trim(),
                     marca = b.marca.trim(), modelo = b.modelo.trim(), normativa = b.normativa.trim(), simbolos = b.simbolos.trim(),
                     fichaTecnica = b.fichaTecnica.trim(), distribuidor = b.distribuidor.trim(), observaciones = b.observaciones.trim(),
-                    fotos = b.fotos.joinToString(EpiEntity.SEPARADOR_FOTOS), documentos = EpiEntity.documentosAJson(docs),
+                    fotos = fotos.joinToString(EpiEntity.SEPARADOR_FOTOS), documentos = EpiEntity.documentosAJson(docs),
                     creadoEn = actual?.creadoEn ?: b.creadoEn, eliminado = false,
                 ),
             )
-            // Los PDF que se quitaron en el editor ya no pertenecen a ninguna ficha
+            // Las fotos y los PDF que se quitaron en el editor ya no pertenecen a ninguna ficha
             val quitados = b.documentos.filter { d -> docs.none { it.id == d.id } }
-            repo.borrarArchivos(quitados.map { repo.rutaDocumento(it.id).path })
+            repo.borrarArchivos(quitados.map { repo.rutaDocumento(it.id).path } + (b.fotos - fotos.toSet()))
             editor = null
+            fotosEditor.clear()
             documentosEditor.clear()
             mensaje(if (b.id == 0L) "EPI añadido al catálogo" else "Cambios guardados")
             sincronizarAlCambiar()
@@ -309,12 +320,14 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun fusionarEnExistente(b: EpiBorrador, existente: EpiEntity) {
         val docsNuevos = documentosEditor.toList()
+        val fotosNuevas = fotosEditor.toList()
+        val fotosQuitadas = b.fotos - fotosNuevas.toSet()
         viewModelScope.launch {
             val existente = repo.porUid(existente.uid) ?: existente
             val fotosActuales = existente.listaFotos()
             val caben = (MAX_FOTOS - fotosActuales.size).coerceAtLeast(0)
-            val nuevas = b.fotos.take(caben)
-            val sobrantes = b.fotos.drop(caben)
+            val nuevas = fotosNuevas.take(caben)
+            val sobrantes = fotosNuevas.drop(caben)
             val docsActuales = existente.listaDocumentos()
             val docsQueCaben = docsNuevos.take((MAX_DOCUMENTOS - docsActuales.size).coerceAtLeast(0))
             val docsSobrantes = docsNuevos - docsQueCaben.toSet()
@@ -332,8 +345,9 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
                     documentos = EpiEntity.documentosAJson(docsActuales + docsQueCaben),
                 ),
             )
-            repo.borrarArchivos(sobrantes + docsSobrantes.map { repo.rutaDocumento(it.id).path })
+            repo.borrarArchivos(sobrantes + fotosQuitadas + docsSobrantes.map { repo.rutaDocumento(it.id).path })
             editor = null
+            fotosEditor.clear()
             documentosEditor.clear()
             sincronizarAlCambiar()
             mensaje(
@@ -352,9 +366,36 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
         // Los PDF adjuntados en esta edición y no guardados se descartan; los que ya tenía la ficha se conservan
         val descartados = documentosEditor.filter { d -> e.documentos.none { it.id == d.id } }.map { repo.rutaDocumento(it.id).path }
         documentosEditor.clear()
-        // Una ficha nueva descartada no debe dejar fotos huérfanas en disco
-        val fotos = if (e.id == 0L) e.fotos else emptyList()
+        // Una ficha nueva descartada no debe dejar fotos huérfanas en disco; en una existente solo sobran las añadidas ahora
+        val fotos = if (e.id == 0L) (e.fotos + fotosEditor).distinct() else fotosEditor.filter { it !in e.fotos }
+        fotosEditor.clear()
         if (fotos.isNotEmpty() || descartados.isNotEmpty()) viewModelScope.launch { repo.borrarArchivos(fotos + descartados) }
+    }
+
+    // ------------------------------------------------------------ fotos del editor
+    /** Fotos de la ficha que se está editando, tal como se guardarán (la primera es la miniatura). */
+    val fotosEditor = mutableStateListOf<String>()
+
+    /** Añade fotos (cámara o galería) a la ficha en edición, hasta [MAX_FOTOS]. */
+    fun anadirFotosEditor(uris: List<Uri>, temporales: List<File> = emptyList()) {
+        val hueco = MAX_FOTOS - fotosEditor.size
+        if (hueco <= 0) {
+            temporales.forEach { it.delete() }
+            mensaje("Máximo $MAX_FOTOS fotos por EPI")
+            return
+        }
+        viewModelScope.launch {
+            procesandoFoto = true
+            fotosEditor.addAll(comprimirFotos(uris, hueco, temporales))
+            procesandoFoto = false
+        }
+    }
+
+    /** La quita de la ficha en edición. El archivo se borra al guardar (o ya, si se acababa de añadir). */
+    fun quitarFotoEditor(ruta: String) {
+        fotosEditor.remove(ruta)
+        val estabaAlAbrir = editor?.fotos?.contains(ruta) == true
+        if (!estabaAlAbrir) viewModelScope.launch { repo.borrarArchivos(listOf(ruta)) }
     }
 
     // ------------------------------------------------------------ documentos PDF del editor

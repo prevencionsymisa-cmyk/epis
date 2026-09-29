@@ -1,9 +1,13 @@
 package com.episcan.app.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,7 +22,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
@@ -30,6 +37,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -44,9 +52,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import androidx.compose.runtime.LaunchedEffect
 import com.episcan.app.data.FichaClave
@@ -66,6 +79,10 @@ fun EditorSheet(
     onGuardar: (EpiBorrador) -> Unit,
     onFusionar: (EpiBorrador, EpiEntity) -> Unit,
     onCancelar: () -> Unit,
+    fotos: List<String> = borrador.fotos,
+    procesandoFoto: Boolean = false,
+    onAnadirFotos: (List<Uri>, List<File>) -> Unit = { _, _ -> },
+    onQuitarFoto: (String) -> Unit = {},
     documentos: List<DocumentoAdjunto> = emptyList(),
     adjuntandoDocumento: Boolean = false,
     documentoDescargado: (DocumentoAdjunto) -> Boolean = { true },
@@ -77,6 +94,26 @@ fun EditorSheet(
     // Selector de archivos del sistema, filtrado a PDF (Descargas, Drive, correo…)
     val elegirPdf = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onAdjuntarDocumento(uri)
+    }
+    // Fotos: galería (varias a la vez) o cámara del sistema, que guarda en un temporal de caché
+    val contexto = LocalContext.current
+    val huecoFotos = (MAX_FOTOS_EDITOR - fotos.size).coerceAtLeast(0)
+    val galeria = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_FOTOS_EDITOR)) { uris ->
+        if (uris.isNotEmpty()) onAnadirFotos(uris, emptyList())
+    }
+    var temporalCamara by remember { mutableStateOf<File?>(null) }
+    val camara = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { hecha ->
+        val temporal = temporalCamara ?: return@rememberLauncherForActivityResult
+        temporalCamara = null
+        if (hecha && temporal.length() > 0) onAnadirFotos(listOf(Uri.fromFile(temporal)), listOf(temporal)) else temporal.delete()
+    }
+    fun abrirCamara() {
+        val temporal = File(File(contexto.cacheDir, "capturas").apply { mkdirs() }, "captura_${System.currentTimeMillis()}.jpg")
+        temporalCamara = temporal
+        camara.launch(FileProvider.getUriForFile(contexto, "${contexto.packageName}.fileprovider", temporal))
+    }
+    val permisoCamara = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { concedido ->
+        if (concedido) abrirCamara()
     }
     var parte by remember(borrador) { mutableStateOf(borrador.parteCuerpo) }
     var subcategoria by remember(borrador) { mutableStateOf(borrador.subcategoria) }
@@ -186,15 +223,52 @@ fun EditorSheet(
                 }
             }
 
-            if (borrador.fotos.isNotEmpty()) {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(borrador.fotos, key = { it }) { ruta ->
-                        AsyncImage(
-                            model = File(ruta),
-                            contentDescription = "Foto del EPI",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(84.dp).clip(RoundedCornerShape(10.dp)),
-                        )
+            // Fotos: se pueden añadir y quitar también al modificar un EPI ya guardado
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Fotos (${fotos.size} de $MAX_FOTOS_EDITOR) · la primera es la miniatura",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.outline,
+                )
+                if (fotos.isNotEmpty()) {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(fotos, key = { it }) { ruta ->
+                            Box {
+                                AsyncImage(
+                                    model = File(ruta),
+                                    contentDescription = "Foto del EPI",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.size(84.dp).clip(RoundedCornerShape(10.dp)),
+                                )
+                                IconButton(
+                                    onClick = { onQuitarFoto(ruta) },
+                                    modifier = Modifier.align(Alignment.TopEnd).size(36.dp)
+                                        .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(50)),
+                                ) { Icon(Icons.Default.Close, "Quitar foto", tint = Color.White, modifier = Modifier.size(18.dp)) }
+                            }
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            val concedido = ContextCompat.checkSelfPermission(contexto, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                            if (concedido) abrirCamara() else permisoCamara.launch(Manifest.permission.CAMERA)
+                        },
+                        enabled = huecoFotos > 0 && !procesandoFoto,
+                        modifier = Modifier.weight(1f).height(52.dp),
+                    ) {
+                        Icon(Icons.Default.CameraAlt, null)
+                        Text("  Cámara")
+                    }
+                    OutlinedButton(
+                        onClick = { galeria.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                        enabled = huecoFotos > 0 && !procesandoFoto,
+                        modifier = Modifier.weight(1f).height(52.dp),
+                    ) {
+                        if (procesandoFoto) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        else Icon(Icons.Default.AddPhotoAlternate, null)
+                        Text("  Galería")
                     }
                 }
             }
@@ -291,13 +365,16 @@ fun EditorSheet(
                             ),
                         )
                     },
-                    enabled = valido && !adjuntandoDocumento,
+                    enabled = valido && !adjuntandoDocumento && !procesandoFoto,
                     modifier = Modifier.weight(1f).height(56.dp),
                 ) { Text(if (duplicado != null && esNueva) "Guardar como nueva" else "Guardar", fontWeight = FontWeight.Bold) }
             }
         }
     }
 }
+
+/** Igual que MAX_FOTOS del ViewModel. */
+private const val MAX_FOTOS_EDITOR = 6
 
 @Composable
 private fun Campo(

@@ -1,8 +1,8 @@
 {
-  "latestVersionCode": 11,
-  "latestVersionName": "1.2.0",
-  "apkUrl": "https://raw.githubusercontent.com/prevencionsymisa-cmyk/epis/main/releases/epi-scan-v1.2.0.apk",
-  "releaseNotes": "Ficha técnica en PDF: adjunta el PDF del distribuidor a cada EPI. Se guarda en el servidor, se sincroniza con los demás móviles y se ve en la web.",
+  "latestVersionCode": 12,
+  "latestVersionName": "1.3.0",
+  "apkUrl": "https://raw.githubusercontent.com/prevencionsymisa-cmyk/epis/main/releases/epi-scan-v1.3.0.apk",
+  "releaseNotes": "Al modificar un EPI ya se pueden añadir fotos (cámara o galería) y quitar las que sobren, además de adjuntar la ficha técnica en PDF.",
   "mandatory": false,
-  "sha256": "d8f43d5d036d00fea138004d9b4a6afa34d21434ccbecacc714a2d5c3f2eaa38"
+  "sha256": "36e543d45e28463c828c784250297f4e1368d51aa4a33d8a5d2e65f0ee528a93"
 }
