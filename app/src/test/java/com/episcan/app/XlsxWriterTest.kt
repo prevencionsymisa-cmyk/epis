@@ -68,13 +68,15 @@ class XlsxWriterTest {
         assertTrue(hoja.contains("REGISTRO TÉCNICO Y HOMOLOGACIÓN DE EQUIPOS DE PROTECCIÓN INDIVIDUAL (EPI)"))
         assertTrue(hoja.contains("Total de EPIs registrados: 3"))
         assertTrue(hoja.contains("""<pane ySplit="4" topLeftCell="A5""""))
-        assertTrue(hoja.contains("""<autoFilter ref="A4:J7"/>"""))
+        assertTrue(hoja.contains("""<autoFilter ref="A4:K7"/>"""))
         assertTrue("escapa & y <", hoja.contains("&amp; &lt;precisión&gt;"))
         assertTrue("elimina caracteres de control", !hoja.contains('\u0001'))
         assertTrue("cabecera Subcategoría", hoja.contains("Subcategoría"))
         assertTrue("cabecera Ficha técnica", hoja.contains("Ficha técnica"))
+        assertTrue("cabecera Tipo / Vinculación", hoja.contains("Tipo / Vinculación"))
         assertTrue("dato de subcategoría", hoja.contains("Protección mecánica"))
         assertTrue("dato de ficha técnica", hoja.contains("FT-204-ES"))
+        assertTrue("dato de tipo", hoja.contains("Principal"))
         // La miniatura de la fila 3 (índice 2) cuelga de la fila 7 (base 0 = 6)
         assertTrue(partes.getValue("xl/drawings/drawing1.xml").decodeToString().contains("<xdr:row>6</xdr:row>"))
     }
@@ -85,6 +87,6 @@ class XlsxWriterTest {
         assertTrue("xl/drawings/drawing1.xml" !in partes)
         val hoja = partes.getValue("xl/worksheets/sheet1.xml").decodeToString()
         assertTrue(hoja.contains("Total de EPIs registrados: 0"))
-        assertTrue(hoja.contains("""<autoFilter ref="A4:J4"/>"""))
+        assertTrue(hoja.contains("""<autoFilter ref="A4:K4"/>"""))
     }
 }

@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -101,6 +102,8 @@ fun HomeScreen(
     val zonaElegida by vm.zonaFiltro.collectAsState()
     val subcategorias by vm.conteoSubcategorias.collectAsState()
     val subcategoriaElegida by vm.subcategoriaFiltro.collectAsState()
+    val soloSinFicha by vm.soloSinFicha.collectAsState()
+    val sinFichaCount by vm.sinFichaTecnica.collectAsState()
     val total by vm.total.collectAsState()
     val consulta by vm.consulta.collectAsState()
     var menuExportar by remember { mutableStateOf(false) }
@@ -112,7 +115,7 @@ fun HomeScreen(
     val subcategoriaActiva = subcategoriaElegida?.takeIf { s -> subcategorias.any { it.first == s } }
     // Se busca en la lista completa: si la ficha se borra o cambia, la hoja se actualiza o se cierra sola
     val detalle = todos.firstOrNull { it.id == detalleId }
-    val filtrando = zonaActiva != null || subcategoriaActiva != null || consulta.isNotBlank()
+    val filtrando = zonaActiva != null || subcategoriaActiva != null || consulta.isNotBlank() || soloSinFicha
 
     Scaffold(
         topBar = {
@@ -185,8 +188,8 @@ fun HomeScreen(
                 singleLine = true,
             )
 
-            // Chips de zona del cuerpo: solo aparecen las zonas que tienen fichas
-            if (zonas.size > 1) {
+            // Chips de zona del cuerpo y filtro rápido de fichas pendientes
+            if (zonas.size > 1 || sinFichaCount > 0) {
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -194,15 +197,37 @@ fun HomeScreen(
                 ) {
                     item {
                         FilterChip(
-                            selected = zonaActiva == null,
-                            onClick = { vm.elegirZona(null) },
+                            selected = zonaActiva == null && !soloSinFicha,
+                            onClick = {
+                                vm.elegirZona(null)
+                                if (soloSinFicha) vm.alternarSoloSinFicha()
+                            },
                             label = { Text("Todos ($total)") },
                         )
                     }
+                    if (sinFichaCount > 0) {
+                        item {
+                            FilterChip(
+                                selected = soloSinFicha,
+                                onClick = { vm.alternarSoloSinFicha() },
+                                label = { Text("Sin ficha ($sinFichaCount)") },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.Warning,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                },
+                            )
+                        }
+                    }
                     items(zonas, key = { it.first }) { (zona, n) ->
                         FilterChip(
-                            selected = zonaActiva == zona,
-                            onClick = { vm.elegirZona(if (zonaActiva == zona) null else zona) },
+                            selected = zonaActiva == zona && !soloSinFicha,
+                            onClick = {
+                                if (soloSinFicha) vm.alternarSoloSinFicha()
+                                vm.elegirZona(if (zonaActiva == zona) null else zona)
+                            },
                             label = { Text("$zona ($n)") },
                         )
                     }
@@ -335,6 +360,14 @@ private fun FilaEpi(epi: EpiEntity, onClick: () -> Unit) {
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
+                    if (epi.fichaTecnica.isBlank() && epi.listaDocumentos().isEmpty()) {
+                        Text(
+                            "Sin FT",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
                 }
                 // Nombre completo: si es largo pasa a más líneas en vez de cortarse
                 Text(
@@ -413,7 +446,7 @@ private fun DetalleSheet(
             // Ficha técnica: la referencia y, debajo, los PDF adjuntos
             val documentos = epi.listaDocumentos()
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Dato("Ficha técnica", epi.fichaTecnica.ifBlank { if (documentos.isEmpty()) "" else "Ver documentos adjuntos" })
+                Dato("Ficha técnica", epi.fichaTecnica.ifBlank { if (documentos.isEmpty()) "Sin ficha técnica adjunta" else "Ver documentos adjuntos" })
                 documentos.forEach { doc ->
                     val archivo = archivoDocumento(doc)
                     FilaDocumento(

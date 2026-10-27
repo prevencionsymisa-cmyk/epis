@@ -21,6 +21,7 @@ class FilaExcel(
     val simbolos: String,
     val fichaTecnica: String,
     val distribuidor: String,
+    val tipo: String = "Principal",
     val miniatura: Miniatura?,
 )
 
@@ -39,7 +40,8 @@ object XlsxWriter {
     private const val COL_SIMBOLOS = 6
     private const val COL_FICHA_TECNICA = 7
     private const val COL_DISTRIBUIDOR = 8
-    private const val COL_MINIATURA = 9
+    private const val COL_TIPO = 9
+    private const val COL_MINIATURA = 10
 
     private val ENCABEZADOS = listOf(
         "Parte del cuerpo que protege",
@@ -51,12 +53,13 @@ object XlsxWriter {
         "Símbolos, pictogramas y significado",
         "Ficha técnica",
         "Distribuidor / Proveedor",
+        "Tipo / Vinculación",
         "Miniatura",
     )
-    private val ANCHOS = listOf(20.0, 20.0, 34.0, 18.0, 20.0, 26.0, 62.0, 18.0, 22.0, 20.0)
+    private val ANCHOS = listOf(20.0, 20.0, 34.0, 18.0, 20.0, 26.0, 62.0, 18.0, 22.0, 22.0, 20.0)
     private val ESTILO_CABECERA = listOf(
         S_CAB_NARANJA, S_CAB_GRIS, S_CAB_PIZARRA, S_CAB_GRIS, S_CAB_GRIS,
-        S_CAB_GRIS, S_CAB_INDIGO, S_CAB_GRIS, S_CAB_GRIS, S_CAB_GRIS,
+        S_CAB_GRIS, S_CAB_INDIGO, S_CAB_GRIS, S_CAB_GRIS, S_CAB_GRIS, S_CAB_GRIS,
     )
 
     private const val FILA_CABECERA = 4
@@ -266,6 +269,7 @@ ${xf(4, 7, 1, datos)}
             sb.append(celda("${letra(COL_SIMBOLOS)}$r", normal, f.simbolos))
             sb.append(celda("${letra(COL_FICHA_TECNICA)}$r", normal, f.fichaTecnica))
             sb.append(celda("${letra(COL_DISTRIBUIDOR)}$r", normal, f.distribuidor))
+            sb.append(celda("${letra(COL_TIPO)}$r", normal, f.tipo))
             sb.append(celda("${letra(COL_MINIATURA)}$r", normal, null)) // aquí flota la miniatura
             sb.append("</row>")
         }
@@ -282,12 +286,12 @@ ${xf(4, 7, 1, datos)}
 
     /** Altura adaptativa: estima las líneas que ocupa el texto envuelto en cada columna. */
     private fun altoFila(f: FilaExcel): Double {
-        // El orden debe coincidir con ANCHOS[COL_PARTE..COL_DISTRIBUIDOR]; la miniatura no necesita estimación de texto.
+        // El orden debe coincidir con ANCHOS[COL_PARTE..COL_TIPO]; la miniatura no necesita estimación de texto.
         val textos = listOf(
             f.parteCuerpo,
             f.subcategoria,
             if (f.observaciones.isBlank()) f.nombreEpi else f.nombreEpi + "\n" + f.observaciones,
-            f.marca, f.modelo, f.normativa, f.simbolos, f.fichaTecnica, f.distribuidor,
+            f.marca, f.modelo, f.normativa, f.simbolos, f.fichaTecnica, f.distribuidor, f.tipo,
         )
         val lineas = textos.mapIndexed { i, t -> lineasEstimadas(t, ANCHOS[i]) }.max()
         val minimo = if (f.miniatura != null) ALTO_MIN_CON_FOTO else ALTO_MIN_SIN_FOTO

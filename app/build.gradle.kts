@@ -24,8 +24,8 @@ android {
         applicationId = "com.episcan.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 12
-        versionName = "1.3.0"
+        versionCode = 13
+        versionName = "1.3.1"
 
         buildConfigField("String", "GEMINI_API_KEY", "\"${prop("GEMINI_API_KEY")}\"")
         buildConfigField("String", "GEMINI_MODEL", "\"${prop("GEMINI_MODEL", "gemini-2.5-flash")}\"")

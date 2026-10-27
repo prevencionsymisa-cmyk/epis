@@ -92,6 +92,13 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
     /** Subcategoría seleccionada dentro de la zona activa (null = todas). Se limpia al cambiar de zona. */
     val subcategoriaFiltro = MutableStateFlow<String?>(null)
 
+    /** Filtro rápido para mostrar solo las fichas que no tienen ficha técnica ni documentos adjuntos. */
+    val soloSinFicha = MutableStateFlow(false)
+
+    fun alternarSoloSinFicha() {
+        soloSinFicha.value = !soloSinFicha.value
+    }
+
     /** Cambia la zona filtrada y limpia la subcategoría, porque pertenece a la zona anterior. */
     fun elegirZona(zona: String?) {
         zonaFiltro.value = zona
@@ -106,6 +113,11 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
     val todos: StateFlow<List<EpiEntity>> = repo.observarTodos()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** Fichas que todavía no tienen ficha técnica ni documentos adjuntos. */
+    val sinFichaTecnica: StateFlow<Int> = repo.observarTodos().map { lista ->
+        lista.count { it.fichaTecnica.isBlank() && it.listaDocumentos().isEmpty() }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
     /** Zonas con al menos una ficha y cuántas tiene cada una, en el orden de [PARTES_CUERPO]. */
     val conteoZonas: StateFlow<List<Pair<String, Int>>> = repo.observarTodos().map { lista ->
         PARTES_CUERPO.map { zona -> zona to lista.count { it.parteCuerpo == zona } }.filter { it.second > 0 }
@@ -117,12 +129,13 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
         else subcategoriasDe(zona).map { sub -> sub to lista.count { it.parteCuerpo == zona && it.subcategoria == sub } }.filter { it.second > 0 }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val epis: StateFlow<List<EpiEntity>> = combine(repo.observarTodos(), consulta, zonaFiltro, subcategoriaFiltro) { lista, q, zona, sub ->
+    val epis: StateFlow<List<EpiEntity>> = combine(repo.observarTodos(), consulta, zonaFiltro, subcategoriaFiltro, soloSinFicha) { lista, q, zona, sub, sinFt ->
         val t = q.trim()
         val zonaActiva = zona?.takeIf { z -> lista.any { it.parteCuerpo == z } }
         val subActiva = sub?.takeIf { s -> lista.any { it.parteCuerpo == zonaActiva && it.subcategoria == s } }
         lista.filter { e ->
-            (zonaActiva == null || e.parteCuerpo == zonaActiva) &&
+            (!sinFt || (e.fichaTecnica.isBlank() && e.listaDocumentos().isEmpty())) &&
+                (zonaActiva == null || e.parteCuerpo == zonaActiva) &&
                 (subActiva == null || e.subcategoria == subActiva) &&
                 (t.isEmpty() || listOf(e.parteCuerpo, e.subcategoria, e.nombreEpi, e.marca, e.modelo, e.normativa, e.simbolos, e.fichaTecnica, e.distribuidor, e.observaciones)
                     .any { it.contains(t, ignoreCase = true) })
@@ -491,14 +504,27 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun generarExcel(): File {
-        val lista = repo.obtenerTodos()
+        val todos = repo.obtenerTodos()
+        val mapaPrincipales = todos.associateBy { it.uid }
+        val lista = if (soloSinFicha.value || consulta.value.isNotBlank() || zonaFiltro.value != null || subcategoriaFiltro.value != null) {
+            epis.value
+        } else {
+            todos
+        }
         val filas = lista.map { e ->
+            val tipoStr = if (e.esComplemento) {
+                val principal = mapaPrincipales[e.epiPrincipalUid]
+                if (principal != null) "Complemento de ${principal.nombreEpi}" else "Complemento"
+            } else {
+                "Principal"
+            }
             FilaExcel(
                 parteCuerpo = e.parteCuerpo, subcategoria = e.subcategoria, nombreEpi = e.nombreEpi, observaciones = e.observaciones,
                 marca = e.marca, modelo = e.modelo, normativa = e.normativa,
                 // Misma estructura que en pantalla: una norma por bloque y una línea por concepto
                 simbolos = FormatoSimbolos.aTextoPlano(FormatoSimbolos.parsear(e.simbolos)),
                 fichaTecnica = e.fichaTecnica, distribuidor = e.distribuidor,
+                tipo = tipoStr,
                 miniatura = e.listaFotos().firstOrNull()?.let { ImageUtils.miniatura(File(it)) },
             )
         }
