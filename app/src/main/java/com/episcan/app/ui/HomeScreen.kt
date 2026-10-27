@@ -318,6 +318,14 @@ private fun FilaEpi(epi: EpiEntity, onClick: () -> Unit) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     BadgeParte(epi.parteCuerpo, compacto = true)
+                    if (epi.esComplemento) {
+                        Text(
+                            "Recambio",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.tertiary,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
                     if (epi.subcategoria.isNotBlank()) {
                         Text(
                             epi.subcategoria,

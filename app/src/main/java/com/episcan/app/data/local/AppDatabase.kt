@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [EpiEntity::class], version = 4, exportSchema = false)
+@Database(entities = [EpiEntity::class], version = 5, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun epiDao(): EpiDao
 
@@ -51,9 +51,17 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Vinculación relacional de complementos y recambios a un EPI principal. */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE epis ADD COLUMN esComplemento INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE epis ADD COLUMN epiPrincipalUid TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun crear(context: Context): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "epis.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
     }
 }

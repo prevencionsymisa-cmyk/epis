@@ -46,6 +46,11 @@ CREATE TABLE IF NOT EXISTS epi_documentos (
     creado_en timestamptz NOT NULL DEFAULT now()
 );
 
+-- Relación de complementos y recambios con su EPI principal
+ALTER TABLE epis ADD COLUMN IF NOT EXISTS es_complemento boolean NOT NULL DEFAULT false;
+ALTER TABLE epis ADD COLUMN IF NOT EXISTS epi_principal_uid uuid DEFAULT NULL;
+CREATE INDEX IF NOT EXISTS epis_principal_idx ON epis (epi_principal_uid);
+
 -- Zonas del cuerpo y subcategorías válidas (la API lo rellena al arrancar). Úsalo para los desplegables de la web.
 CREATE TABLE IF NOT EXISTS catalogo_subcategorias (
     parte        text NOT NULL,

@@ -59,6 +59,8 @@ data class EpiBorrador(
     val fichaTecnica: String = "",
     val distribuidor: String = "",
     val observaciones: String = "",
+    val esComplemento: Boolean = false,
+    val epiPrincipalUid: String = "",
     val fotos: List<String> = emptyList(),
     /** PDF que la ficha tenía al abrir el editor (para saber cuáles se añadieron o quitaron al terminar). */
     val documentos: List<DocumentoAdjunto> = emptyList(),
@@ -279,6 +281,7 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
             marca = epi.marca, modelo = epi.modelo, normativa = epi.normativa, simbolos = epi.simbolos,
             fichaTecnica = epi.fichaTecnica, distribuidor = epi.distribuidor, observaciones = epi.observaciones,
             fotos = epi.listaFotos(), documentos = epi.listaDocumentos(), creadoEn = epi.creadoEn,
+            esComplemento = epi.esComplemento, epiPrincipalUid = epi.epiPrincipalUid,
         )
         fotosEditor.clear()
         fotosEditor.addAll(epi.listaFotos())
@@ -299,6 +302,7 @@ class EpiViewModel(app: Application) : AndroidViewModel(app) {
                     parteCuerpo = b.parteCuerpo, subcategoria = b.subcategoria, nombreEpi = b.nombreEpi.trim(),
                     marca = b.marca.trim(), modelo = b.modelo.trim(), normativa = b.normativa.trim(), simbolos = b.simbolos.trim(),
                     fichaTecnica = b.fichaTecnica.trim(), distribuidor = b.distribuidor.trim(), observaciones = b.observaciones.trim(),
+                    esComplemento = b.esComplemento, epiPrincipalUid = b.epiPrincipalUid,
                     fotos = fotos.joinToString(EpiEntity.SEPARADOR_FOTOS), documentos = EpiEntity.documentosAJson(docs),
                     creadoEn = actual?.creadoEn ?: b.creadoEn, eliminado = false,
                 ),

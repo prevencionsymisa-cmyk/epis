@@ -25,6 +25,8 @@ export function filaAItem(fila) {
     uid: fila.uid,
     revision: Number(fila.revision),
     eliminado: fila.eliminado,
+    esComplemento: Boolean(fila.es_complemento),
+    epiPrincipalUid: fila.epi_principal_uid || '',
     fotos: fila.fotos ?? [],
     documentos: normalizarDocumentos(fila.documentos),
     creadoEn: aMs(fila.creado_en),
@@ -37,6 +39,8 @@ export function filaAItem(fila) {
 /** ¿Los datos que llegan son idénticos a los que ya hay guardados? (reintentos de red sin efecto) */
 function mismosDatos(fila, item) {
   if (Boolean(item.eliminado) !== fila.eliminado) return false;
+  if (Boolean(item.esComplemento) !== Boolean(fila.es_complemento)) return false;
+  if ((item.epiPrincipalUid || '') !== (fila.epi_principal_uid || '')) return false;
   const fotosA = JSON.stringify(fila.fotos ?? []);
   const fotosB = JSON.stringify(item.fotos ?? []);
   if (fotosA !== fotosB) return false;
@@ -55,13 +59,15 @@ function mismosDatos(fila, item) {
 function valores(item, documentosActuales = []) {
   return [
     ...Object.keys(CAMPOS_TEXTO).map((json) => item[json] ?? ''),
+    Boolean(item.esComplemento),
+    item.epiPrincipalUid ? item.epiPrincipalUid : null,
     item.fotos ?? [],
     JSON.stringify(normalizarDocumentos(item.documentos ?? documentosActuales)),
     Boolean(item.eliminado),
   ];
 }
 
-const COLUMNAS = [...Object.values(CAMPOS_TEXTO), 'fotos', 'documentos', 'eliminado'];
+const COLUMNAS = [...Object.values(CAMPOS_TEXTO), 'es_complemento', 'epi_principal_uid', 'fotos', 'documentos', 'eliminado'];
 
 /**
  * Crea o actualiza una ficha con control de concurrencia optimista:
@@ -112,7 +118,7 @@ export async function cambiosDesde(db, desde, limite) {
 }
 
 /** Listado para la web, con búsqueda y filtros. */
-export async function listar(db, { q, parte, subcategoria, incluirEliminados, limite, desplazamiento }) {
+export async function listar(db, { q, parte, subcategoria, esComplemento, epiPrincipalUid, incluirEliminados, limite, desplazamiento }) {
   const condiciones = [];
   const params = [];
   const param = (v) => {
@@ -122,6 +128,8 @@ export async function listar(db, { q, parte, subcategoria, incluirEliminados, li
   if (!incluirEliminados) condiciones.push('NOT eliminado');
   if (parte) condiciones.push(`parte_cuerpo = ${param(parte)}`);
   if (subcategoria) condiciones.push(`subcategoria = ${param(subcategoria)}`);
+  if (typeof esComplemento === 'boolean') condiciones.push(`es_complemento = ${param(esComplemento)}`);
+  if (epiPrincipalUid) condiciones.push(`epi_principal_uid = ${param(epiPrincipalUid)}`);
   if (q) {
     const p = param(`%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
     const columnas = ['nombre_epi', 'marca', 'modelo', 'normativa', 'simbolos', 'ficha_tecnica', 'distribuidor', 'observaciones', 'subcategoria', 'parte_cuerpo'];
@@ -139,7 +147,23 @@ export async function listar(db, { q, parte, subcategoria, incluirEliminados, li
 export async function obtener(db, uid, incluirEliminados = false) {
   const [fila] = await db.query('SELECT * FROM epis WHERE uid = $1', [uid]);
   if (!fila || (fila.eliminado && !incluirEliminados)) return null;
-  return filaAItem(fila);
+  const item = filaAItem(fila);
+  if (!item.esComplemento) {
+    const hijos = await db.query('SELECT * FROM epis WHERE epi_principal_uid = $1 AND NOT eliminado ORDER BY nombre_epi', [uid]);
+    item.complementos = hijos.map(filaAItem);
+  } else if (item.epiPrincipalUid) {
+    const [padre] = await db.query('SELECT uid, nombre_epi, marca, modelo, parte_cuerpo FROM epis WHERE uid = $1', [item.epiPrincipalUid]);
+    if (padre) {
+      item.epiPrincipal = {
+        uid: padre.uid,
+        nombreEpi: padre.nombre_epi,
+        marca: padre.marca,
+        modelo: padre.modelo,
+        parteCuerpo: padre.parte_cuerpo,
+      };
+    }
+  }
+  return item;
 }
 
 export const nuevoUid = () => randomUUID();

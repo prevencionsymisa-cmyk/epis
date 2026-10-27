@@ -22,6 +22,8 @@ data class EpiDto(
     val fichaTecnica: String = "",
     val distribuidor: String = "",
     val observaciones: String = "",
+    val esComplemento: Boolean = false,
+    val epiPrincipalUid: String = "",
     /** Identificadores de las fotos (nombre del archivo, p. ej. "epi_….jpg"), no rutas. */
     val fotos: List<String> = emptyList(),
     /** PDFs adjuntos: identificador (nombre del archivo, "doc_….pdf") y nombre original. */
@@ -64,6 +66,8 @@ fun EpiEntity.aDto(): EpiDto = EpiDto(
     fichaTecnica = fichaTecnica,
     distribuidor = distribuidor,
     observaciones = observaciones,
+    esComplemento = esComplemento,
+    epiPrincipalUid = epiPrincipalUid,
     fotos = listaFotos().map { File(it).name },
     documentos = listaDocumentos(),
     creadoEn = creadoEn,
@@ -83,6 +87,8 @@ fun EpiDto.aEntidad(existente: EpiEntity?, directorioFotos: String): EpiEntity =
     fichaTecnica = fichaTecnica,
     distribuidor = distribuidor,
     observaciones = observaciones,
+    esComplemento = esComplemento,
+    epiPrincipalUid = epiPrincipalUid,
     fotos = fotos.joinToString(EpiEntity.SEPARADOR_FOTOS) { File(directorioFotos, it).path },
     // Si el JSON trae "documentos": null, Gson deja el campo a null aunque Kotlin diga que no puede serlo
     documentos = EpiEntity.documentosAJson(documentos.orEmpty().filter { it.id.isNotBlank() }),

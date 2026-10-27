@@ -205,6 +205,35 @@ describe('edición desde la web', () => {
     assert.ok(c.subcategorias['Manos y Brazos'].includes('Protección química'));
     assert.equal(c.subcategorias['Cabeza'].at(-1), 'Otra / no clasificada');
   });
+
+  it('vincula complementos y recambios a un EPI principal', async () => {
+    const mascara = (await env.llamar('POST', '/api/epis', {
+      token: TOKEN_WEB,
+      json: { parteCuerpo: 'Vías Respiratorias', nombreEpi: 'Máscara 3M 6200', esComplemento: false },
+    })).json();
+    assert.equal(mascara.esComplemento, false);
+
+    const filtro = (await env.llamar('POST', '/api/epis', {
+      token: TOKEN_WEB,
+      json: {
+        parteCuerpo: 'Vías Respiratorias',
+        nombreEpi: 'Filtros 3M 6059 ABEK1',
+        esComplemento: true,
+        epiPrincipalUid: mascara.uid,
+      },
+    })).json();
+    assert.equal(filtro.esComplemento, true);
+    assert.equal(filtro.epiPrincipalUid, mascara.uid);
+
+    const detalleMascara = (await env.llamar('GET', `/api/epis/${mascara.uid}`, { token: TOKEN_WEB })).json();
+    assert.ok(Array.isArray(detalleMascara.complementos));
+    assert.equal(detalleMascara.complementos.length, 1);
+    assert.equal(detalleMascara.complementos[0].uid, filtro.uid);
+
+    const detalleFiltro = (await env.llamar('GET', `/api/epis/${filtro.uid}`, { token: TOKEN_WEB })).json();
+    assert.equal(detalleFiltro.epiPrincipal.uid, mascara.uid);
+    assert.equal(detalleFiltro.epiPrincipal.nombreEpi, 'Máscara 3M 6200');
+  });
 });
 
 describe('la base de datos protege la coherencia aunque la web escriba directamente con SQL', () => {

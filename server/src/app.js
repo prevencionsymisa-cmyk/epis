@@ -24,6 +24,8 @@ const esquemaItem = {
     fichaTecnica: { type: 'string', maxLength: 500 },
     distribuidor: { type: 'string', maxLength: 300 },
     observaciones: { type: 'string', maxLength: 5000 },
+    esComplemento: { type: 'boolean' },
+    epiPrincipalUid: { type: ['string', 'null'] },
     fotos: { type: 'array', maxItems: 12, items: { type: 'string', pattern: ID_FOTO } },
     // PDFs adjuntos (ficha técnica del distribuidor…). Opcional: si falta se conservan los que ya hubiera.
     documentos: {
@@ -159,6 +161,8 @@ export function crearApp({
             q: { type: 'string', maxLength: 200 },
             parte: { type: 'string', maxLength: 100 },
             subcategoria: { type: 'string', maxLength: 100 },
+            esComplemento: { type: 'boolean' },
+            epiPrincipalUid: { type: 'string', pattern: UUID },
             incluirEliminados: { type: 'boolean', default: false },
             limite: { type: 'integer', minimum: 1, maximum: 1000, default: 200 },
             desplazamiento: { type: 'integer', minimum: 0, default: 0 },

@@ -37,6 +37,11 @@ data class EpiEntity(
     /** Documentos PDF adjuntos, como JSON: [{"id": "doc_….pdf", "nombre": "Ficha técnica.pdf"}]. Vacío = ninguno. */
     val documentos: String = "",
     val creadoEn: Long = System.currentTimeMillis(),
+    // ---- Relación con EPI principal ----
+    /** true si este equipo es un accesorio, recambio o complemento de otro EPI. */
+    val esComplemento: Boolean = false,
+    /** UID del EPI principal al que pertenece (cadena vacía si es un EPI completo o independiente). */
+    val epiPrincipalUid: String = "",
     // ---- Sincronización con el servidor ----
     /** Última revisión del servidor conocida para esta ficha (0 = todavía no se ha enviado nunca). */
     val revision: Long = 0,

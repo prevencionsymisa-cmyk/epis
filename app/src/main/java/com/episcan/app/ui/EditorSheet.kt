@@ -125,6 +125,12 @@ fun EditorSheet(
     var fichaTecnica by remember(borrador) { mutableStateOf(borrador.fichaTecnica) }
     var distribuidor by remember(borrador) { mutableStateOf(borrador.distribuidor) }
     var observaciones by remember(borrador) { mutableStateOf(borrador.observaciones) }
+    var esComplemento by remember(borrador) { mutableStateOf(borrador.esComplemento) }
+    var epiPrincipalUid by remember(borrador) { mutableStateOf(borrador.epiPrincipalUid) }
+    var menuPrincipal by remember { mutableStateOf(false) }
+    val episPrincipales = remember(existentes, borrador.uid) {
+        existentes.filter { !it.esComplemento && (borrador.uid.isBlank() || it.uid != borrador.uid) }
+    }
     var menuParte by remember { mutableStateOf(false) }
     var menuSubcategoria by remember { mutableStateOf(false) }
     val opcionesSubcategoria = remember(parte) { subcategoriasDe(parte) }
@@ -273,6 +279,69 @@ fun EditorSheet(
                 }
             }
 
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("¿Es un complemento o recambio?", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                            Text("Vincular a otro EPI principal", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        androidx.compose.material3.Switch(
+                            checked = esComplemento,
+                            onCheckedChange = { activo ->
+                                esComplemento = activo
+                                if (!activo) epiPrincipalUid = ""
+                            },
+                        )
+                    }
+                    if (esComplemento) {
+                        val principalSeleccionado = episPrincipales.find { it.uid == epiPrincipalUid }
+                        ExposedDropdownMenuBox(
+                            expanded = menuPrincipal,
+                            onExpandedChange = { menuPrincipal = it },
+                        ) {
+                            OutlinedTextField(
+                                value = principalSeleccionado?.let { "${it.nombreEpi}${if (it.marca.isNotBlank()) " (${it.marca})" else ""}" } ?: if (epiPrincipalUid.isBlank()) "— Ninguno (accesorio independiente) —" else "EPI principal",
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("EPI principal al que pertenece") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = menuPrincipal) },
+                                modifier = Modifier.fillMaxWidth().menuAnchor(),
+                            )
+                            ExposedDropdownMenu(
+                                expanded = menuPrincipal,
+                                onDismissRequest = { menuPrincipal = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("— Ninguno (accesorio independiente) —") },
+                                    onClick = {
+                                        epiPrincipalUid = ""
+                                        menuPrincipal = false
+                                    },
+                                )
+                                episPrincipales.forEach { p ->
+                                    DropdownMenuItem(
+                                        text = { Text("${p.nombreEpi}${if (p.marca.isNotBlank()) " (${p.marca})" else ""}") },
+                                        onClick = {
+                                            epiPrincipalUid = p.uid
+                                            if (parte.isBlank() && p.parteCuerpo.isNotBlank()) parte = p.parteCuerpo
+                                            menuPrincipal = false
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // 1. Parte del cuerpo
             ExposedDropdownMenuBox(expanded = menuParte, onExpandedChange = { menuParte = it }) {
                 OutlinedTextField(
@@ -362,6 +431,8 @@ fun EditorSheet(
                                 parteCuerpo = parte, subcategoria = subcategoria, nombreEpi = nombre, marca = marca,
                                 modelo = modelo, normativa = normativa, simbolos = simbolos, fichaTecnica = fichaTecnica,
                                 distribuidor = distribuidor, observaciones = observaciones,
+                                esComplemento = esComplemento,
+                                epiPrincipalUid = if (esComplemento) epiPrincipalUid else "",
                             ),
                         )
                     },
